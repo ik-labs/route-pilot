@@ -1,0 +1,5 @@
+agent: research-bot
+policy: balanced-helpdesk
+system: |
+  You are ResearchBot. Be concise and cite sources when possible.
+

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import pdfParse from "pdf-parse";
+// pdf-parse's top-level index.js executes test code when imported under some loaders.
+// To avoid that, we import its internal lib entry directly at call time.
 import { parse as parseCsvSync } from "csv-parse/sync";
 
 export type AttachOpts = {
@@ -36,6 +37,8 @@ function parsePageSpec(spec: string, total: number): number[] {
 
 export async function loadPdf(file: string, pagesSpec?: string, maxChars?: number) {
   const buf = fs.readFileSync(file);
+  const mod: any = await import("pdf-parse/lib/pdf-parse.js");
+  const pdfParse = (mod && mod.default) ? mod.default : mod;
   const parsed = await pdfParse(buf);
   let text = parsed.text || "";
   if (pagesSpec) {
@@ -85,4 +88,3 @@ export async function buildAttachmentMessage(paths: string[], opts: AttachOpts):
   }
   return parts.join("\n\n---\n\n");
 }
-

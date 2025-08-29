@@ -178,6 +178,24 @@ program
     agents.forEach((a) => console.log(a));
   });
 
+// Alias: `agents` behaves like `agents:list` for convenience
+program
+  .command("agents")
+  .description("Alias for agents:list")
+  .option("--json", "output JSON", false)
+  .action((opts) => {
+    const agents = listAgents();
+    if (opts.json) {
+      console.log(JSON.stringify(agents));
+      return;
+    }
+    if (!agents.length) {
+      console.log("No agents found. Add YAML files under agents/.");
+      return;
+    }
+    agents.forEach((a) => console.log(a));
+  });
+
 program
   .command("agents:create")
   .description("Create a new agent YAML under agents/")
@@ -201,4 +219,9 @@ program
     }
   });
 
-program.parseAsync();
+// Workaround: when invoking via some runners (e.g., pnpm + tsx), a standalone "--" may
+// be forwarded in argv and confuse subcommand parsing. Strip it before parsing.
+const argv = process.argv.slice();
+const dd = argv.indexOf("--");
+if (dd !== -1) argv.splice(dd, 1);
+program.parseAsync(argv);
