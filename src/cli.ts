@@ -24,6 +24,11 @@ program
   .requiredOption("-u, --user <userRef>")
   .option("--input <text>", "inline prompt text")
   .option("--file <path>", "read prompt from file path")
+  .option("--attach <paths...>", "attach one or more files (pdf, csv, txt, md)")
+  .option("--max-chars <n>", "max attachment chars (default 15000)", (v) => parseInt(v, 10))
+  .option("--pdf-pages <spec>", "pdf page ranges, e.g. 1-5,8")
+  .option("--csv-max-rows <n>", "csv sample rows (default 50)", (v) => parseInt(v, 10))
+  .option("--csv-cols <list>", "csv columns to include, e.g. a,b,c")
   .option("--json", "print one-line summary as JSON after stream", false)
   .option(
     "--mirror-json",
@@ -41,6 +46,13 @@ program
       policyName: opts.policy,
       userRef: opts.user,
       input: text,
+      attach: opts.attach,
+      attachOpts: {
+        maxChars: opts.maxChars,
+        pdfPages: opts.pdfPages,
+        csvMaxRows: opts.csvMaxRows,
+        csvCols: opts.csvCols,
+      },
       mirrorJson: !!opts["mirrorJson"],
       json: !!opts["json"],
     });
@@ -97,6 +109,11 @@ program
   .option("--session <id>", "existing session id to resume")
   .option("--policy <name>", "override policy name defined by agent")
   .option("--input <text>", "single-turn input; omit for interactive")
+  .option("--attach <paths...>", "attach one or more files (pdf, csv, txt, md)")
+  .option("--max-chars <n>", "max attachment chars (default 15000)", (v) => parseInt(v, 10))
+  .option("--pdf-pages <spec>", "pdf page ranges, e.g. 1-5,8")
+  .option("--csv-max-rows <n>", "csv sample rows (default 50)", (v) => parseInt(v, 10))
+  .option("--csv-cols <list>", "csv columns to include, e.g. a,b,c")
   .action(async (opts) => {
     if (opts.input) {
       const { sessionId } = await runAgent({
@@ -105,6 +122,13 @@ program
         input: opts.input,
         session: opts.session,
         policyOverride: opts.policy,
+        attach: opts.attach,
+        attachOpts: {
+          maxChars: opts.maxChars,
+          pdfPages: opts.pdfPages,
+          csvMaxRows: opts.csvMaxRows,
+          csvCols: opts.csvCols,
+        },
       });
       console.error(`\n(session ${sessionId})`);
       return;
@@ -123,6 +147,13 @@ program
         input: line,
         session: sessionId,
         policyOverride: opts.policy,
+        attach: opts.attach,
+        attachOpts: {
+          maxChars: opts.maxChars,
+          pdfPages: opts.pdfPages,
+          csvMaxRows: opts.csvMaxRows,
+          csvCols: opts.csvCols,
+        },
       });
       sessionId = res.sessionId;
       console.error(`\n(session ${sessionId})\n`);

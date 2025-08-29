@@ -6,6 +6,7 @@ import { addDailyTokens, assertWithinRpm } from "./quotas.js";
 import { estimateCost } from "./rates.js";
 import { runWithFallback } from "./router.js";
 import { streamToBufferAndStdout } from "./util/stream.js";
+import { buildAttachmentMessage, AttachOpts } from "./util/files.js";
 
 function uuid() { return crypto.randomUUID(); }
 
@@ -42,12 +43,16 @@ export async function runAgent({
   input,
   session,
   policyOverride,
+  attach,
+  attachOpts,
 }: {
   agentName: string;
   userRef: string;
   input: string;
   session?: string;
   policyOverride?: string;
+  attach?: string[];
+  attachOpts?: AttachOpts;
 }) {
   const agent = loadAgent(agentName);
   const policy = await loadPolicy(policyOverride || agent.policy);
@@ -70,6 +75,10 @@ export async function runAgent({
     ...history.map((m) => ({ role: m.role as any, content: m.content })),
     { role: "user", content: input },
   ];
+  if (attach && attach.length) {
+    const attachmentBlock = await buildAttachmentMessage(attach, attachOpts ?? {});
+    messages.push({ role: "user", content: attachmentBlock });
+  }
 
   addMessage(sessionId!, "user", input);
 
@@ -108,4 +117,3 @@ export async function runAgent({
 
   return { sessionId };
 }
-

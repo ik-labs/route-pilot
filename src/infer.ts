@@ -4,17 +4,22 @@ import { loadPolicy } from "./policy.js";
 import { addDailyTokens, assertWithinRpm } from "./quotas.js";
 import db from "./db.js";
 import { estimateCost } from "./rates.js";
+import { buildAttachmentMessage, AttachOpts } from "./util/files.js";
 
 export async function infer({
   policyName,
   userRef,
   input,
+  attach,
+  attachOpts,
   mirrorJson,
   json,
 }: {
   policyName: string;
   userRef: string;
   input: string;
+  attach?: string[];
+  attachOpts?: AttachOpts;
   mirrorJson?: boolean;
   json?: boolean;
 }) {
@@ -24,6 +29,10 @@ export async function infer({
   assertWithinRpm(userRef, policy.tenancy.per_user_rpm);
 
   const messages = [{ role: "user", content: input }];
+  if (attach && attach.length) {
+    const attachmentBlock = await buildAttachmentMessage(attach, attachOpts ?? {});
+    messages.push({ role: "user", content: attachmentBlock });
+  }
   // Optional system prompt
   if (policy.gen?.system) {
     messages.unshift({ role: "system", content: policy.gen.system });

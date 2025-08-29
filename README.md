@@ -67,6 +67,9 @@ mistral/small:            { input: 0.10, output: 0.30 }
   routepilot infer -p balanced-helpdesk -u alice --input "Summarize: ..."
   # or
   routepilot infer -p balanced-helpdesk -u alice --file prompt.txt
+  # with attachments (pdf, csv, txt, md)
+  routepilot infer -p balanced-helpdesk -u alice --input "Summarize the attachment" \
+    --attach report.pdf data.csv --pdf-pages 1-5 --csv-max-rows 50 --csv-cols "colA,colB" --max-chars 15000
   # flags
   #   --json         print a single JSON summary line after the stream
   #   --mirror-json  also mirror receipt JSON to data/receipts/
@@ -116,6 +119,12 @@ Agents are named configurations that pair a policy with a system prompt and sess
   ```bash
   routepilot agent -a support-bot -u alice
   # Type messages, '/exit' to quit; session id prints after replies
+  ```
+
+- Single-turn with attachments (pdf, csv, txt, md):
+  ```bash
+  routepilot agent -a support-bot -u alice --input "Analyze these files" \
+    --attach report.pdf data.csv --pdf-pages 1-3 --csv-max-rows 30
   ```
 
 - Resume a session:
