@@ -1,5 +1,5 @@
 import { callGateway, ChatParams } from "./gateway.js";
-import { streamToStdout } from "./util/stream.js";
+import { streamSSEToStdout } from "./util/stream.js";
 import { fastestByRecentP95, p95LatencyFor } from "./db.js";
 
 type RoutePlan = { primary: string[]; backups: string[] };
@@ -54,7 +54,7 @@ export async function runWithFallback(
         }
       }, fallbackOnMs);
 
-      const handler = streamHandler ?? streamToStdout;
+      const handler = streamHandler ?? (streamSSEToStdout as any);
       await handler(res, () => {
         firstChunkSeen = true;
       });

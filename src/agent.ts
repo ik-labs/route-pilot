@@ -5,7 +5,7 @@ import { loadPolicy } from "./policy.js";
 import { addDailyTokens, assertWithinRpm } from "./quotas.js";
 import { estimateCost } from "./rates.js";
 import { runWithFallback } from "./router.js";
-import { streamToBufferAndStdout } from "./util/stream.js";
+import { streamSSEToBufferAndStdout } from "./util/stream.js";
 import { buildAttachmentMessage, AttachOpts } from "./util/files.js";
 
 function uuid() { return crypto.randomUUID(); }
@@ -84,7 +84,7 @@ export async function runAgent({
 
   let captured = "";
   const handler = async (res: Response, onFirstChunk: () => void) => {
-    captured = await streamToBufferAndStdout(res, onFirstChunk);
+    captured = await streamSSEToBufferAndStdout(res, onFirstChunk);
   };
 
   const { routeFinal, fallbackCount, latency } = await runWithFallback(
