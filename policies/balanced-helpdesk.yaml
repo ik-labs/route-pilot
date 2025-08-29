@@ -1,0 +1,28 @@
+policy: balanced-helpdesk
+objectives:
+  p95_latency_ms: 1200
+  max_cost_usd: 0.010
+  max_tokens: 1200
+routing:
+  primary: ["openai/gpt-4o-mini"]
+  backups: ["anthropic/claude-3-haiku", "mistral/small"]
+  p95_window_n: 50
+strategy:
+  stream: true
+  retry_on: ["5xx", "rate_limit"]
+  fallback_on_latency_ms: 1500
+  max_attempts: 3
+  backoff_ms: [100, 300]
+gen:
+  # Optional generation controls (will be passed through to the gateway)
+  # system: "You are helpful."
+  # temperature: 0.3
+  # top_p: 0.9
+  # stop: ["\n\nUser:"]
+  # json_mode: false
+tenancy:
+  per_user_daily_tokens: 20000
+  per_user_rpm: 30
+  timezone: "Asia/Kolkata"
+quality:
+  judge: null

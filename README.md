@@ -1,0 +1,150 @@
+# RoutePilot (CLI)
+
+A small, policy-driven CLI proxy/orchestrator for LLMs via Vercel AI Gateway. It reads a policy YAML, streams model output with supervised failover, enforces per-user quotas, and writes signed receipts to SQLite.
+
+- OpenAI-compatible streaming via your Vercel AI Gateway project.
+- Failover on stall/5xx, with p95-aware route pre-pick.
+- Per-user daily token caps and sliding RPM.
+- Signed receipts + traces in SQLite (WAL), optional pretty JSON mirror.
+
+## Requirements
+- Node 20+
+- pnpm (recommended)
+- Native toolchain for `better-sqlite3` (macOS/Linux dev tools). If builds are blocked by pnpm, run `pnpm approve-builds`.
+
+## Install
+
+- Local dev (from this repo):
+  - `pnpm install`
+  - If build scripts were blocked: `pnpm approve-builds` → allow `better-sqlite3` (and `esbuild` for `tsx`); then `pnpm rebuild`.
+  - Run: `pnpm dev -- infer -p balanced-helpdesk -u alice --input "Hello"`
+
+- Global (link locally while developing):
+  - `pnpm link -g`
+  - Then use `routepilot ...` from anywhere.
+
+- As a dependency in another project (monorepo or app):
+  - Add this repo as a package (e.g., workspace or Git URL) and add a script:
+    ```json
+    { "scripts": { "routepilot": "routepilot" } }
+    ```
+  - Or call it via `pnpm exec routepilot ...` after adding as a dep.
+
+## Configuration
+
+Create a `.env` at the repo root or in your project:
+
+- `AI_GATEWAY_BASE_URL` — OpenAI-compatible base from Vercel AI Gateway (e.g., `https://gateway.ai.vercel.ai/api/openai`). RoutePilot calls `${BASE}/v1/chat/completions`.
+- `AI_GATEWAY_API_KEY` — your Gateway key.
+- Optional:
+  - `ROUTEPILOT_MIRROR_JSON=1` — also write pretty receipts to `data/receipts/<id>.json`.
+  - `JWT_SECRET` — HMAC secret for signing receipt payloads (defaults to `dev-secret`).
+
+Policies live under `policies/`. Starters:
+
+- `policies/beginner-minimal.yaml` — minimal routing + quotas.
+- `policies/balanced-helpdesk.yaml` — balanced defaults.
+- `policies/advanced-controls.yaml` — advanced: p95 window, backoff, generation controls, timezone.
+
+Rates are placeholder defaults merged with `config/rates.yaml` if present. Example:
+
+```yaml
+openai/gpt-4o-mini:       { input: 0.15, output: 0.60 }
+anthropic/claude-3-haiku: { input: 0.25, output: 1.25 }
+mistral/small:            { input: 0.10, output: 0.30 }
+```
+
+## Database
+
+- SQLite file at `data/routepilot.db` (created automatically), WAL mode enabled.
+- Tables: `receipts`, `traces`, `quotas_daily`, `rpm_events`.
+- Schema is created idempotently on startup via `src/db.ts`.
+
+## Usage
+
+- Infer (streaming + failover):
+  ```bash
+  routepilot infer -p balanced-helpdesk -u alice --input "Summarize: ..."
+  # or
+  routepilot infer -p balanced-helpdesk -u alice --file prompt.txt
+  # flags
+  #   --json         print a single JSON summary line after the stream
+  #   --mirror-json  also mirror receipt JSON to data/receipts/
+  ```
+
+- Usage (per-user day + month totals):
+  ```bash
+  routepilot usage -u alice --json
+  # or specify timezone explicitly for reporting
+  routepilot usage -u alice --tz UTC --json
+  ```
+
+- Receipts (list/show):
+  ```bash
+  routepilot receipts --limit 10
+  routepilot receipts --open <id> --json
+  ```
+
+- Replay (stub):
+  ```bash
+  routepilot replay
+  ```
+
+## How It Routes
+
+- Starts with the `primary` in your policy.
+- If recent p95 latency for the primary (from `traces`, window `routing.p95_window_n`) exceeds the policy target, it pre-picks the fastest backup (by recent p95) to try first.
+- Supervises streaming:
+  - Aborts if no first chunk within `fallback_on_latency_ms` or on 5xx; falls back to the next route.
+
+## Quotas & Limits
+
+- RPM: strict sliding 60s per user across all models (table `rpm_events`).
+- Daily tokens: increments `quotas_daily` per user/day using `tenancy.timezone` (defaults to Asia/Kolkata).
+
+## Policy Reference (current fields)
+
+- `objectives.p95_latency_ms` — target latency; used for pre-pick logic.
+- `objectives.max_cost_usd` — budget hint (not enforced yet per request level).
+- `objectives.max_tokens` — upper bound for completion tokens.
+- `routing.primary` / `routing.backups` — model order; `routing.p95_window_n` — recent sample size for p95.
+- `strategy.stream` — stream responses; `strategy.retry_on` — informational; `strategy.fallback_on_latency_ms` — stall cutoff; `strategy.max_attempts` — cap attempts; `strategy.backoff_ms` — per-attempt backoff.
+- `gen` — optional: `system`, `temperature`, `top_p`, `stop`, `json_mode` (maps to OpenAI `response_format: {type: "json_object"}` when true).
+- `tenancy.per_user_daily_tokens`, `tenancy.per_user_rpm`, `tenancy.timezone` — quotas + clock.
+- Token accounting is placeholder for streaming; cost is estimated via rates. You can refine usage with a follow-up non-stream call if needed.
+
+## Integration Patterns
+
+- Global tool for local workflows: `pnpm link -g` and run `routepilot` in any repo.
+- Project-local tool: add as a dependency and run via `pnpm exec routepilot` or a script.
+- Programmatic (optional): You can import modules from `src/` (e.g., `infer`) within a TypeScript project if this repo is part of your workspace. The public API is primarily the CLI.
+
+## Deployment Options
+
+- Publish to npm (recommended for teams):
+  - Ensure your `package.json` has proper name/version.
+  - `pnpm publish --access public` (org policy dependent).
+  - Consumers install: `pnpm add -D routepilot` or `pnpm add -g routepilot`.
+
+- Containerize for CI runners:
+  - Use Node 20 base, install deps (including native build for `better-sqlite3`).
+  - Mount or persist `data/` if you need receipts/usage across runs.
+
+- CI usage:
+  - Set `AI_GATEWAY_BASE_URL` and `AI_GATEWAY_API_KEY` as secrets.
+  - Call the CLI in steps (e.g., run benchmarks or replays later).
+
+## Troubleshooting
+
+- "Ignored build scripts" after `pnpm install`:
+  - Run `pnpm approve-builds` → allow `better-sqlite3` (and `esbuild`), then `pnpm rebuild`.
+- Missing env error:
+  - Ensure `.env` contains `AI_GATEWAY_BASE_URL` and `AI_GATEWAY_API_KEY`.
+- No streaming output:
+  - Verify the Vercel AI Gateway project is configured and the endpoint supports `/v1/chat/completions` with streaming.
+- Receipts/cost look off:
+  - The MVP estimates usage for streaming; refine later with provider usage data or a follow-up non-stream call.
+
+## License
+
+Add your preferred license file if distributing. By default, this repo has no explicit license.

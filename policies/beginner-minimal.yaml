@@ -1,0 +1,19 @@
+policy: beginner-minimal
+objectives:
+  p95_latency_ms: 1500
+  max_cost_usd: 0.010
+  max_tokens: 1024
+routing:
+  primary: ["openai/gpt-4o-mini"]
+  backups: []
+strategy:
+  stream: true
+  retry_on: ["5xx", "rate_limit"]
+  fallback_on_latency_ms: 1500
+tenancy:
+  per_user_daily_tokens: 20000
+  per_user_rpm: 30
+  timezone: "Asia/Kolkata"
+quality:
+  judge: null
+

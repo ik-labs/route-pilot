@@ -1,0 +1,29 @@
+policy: advanced-controls
+objectives:
+  p95_latency_ms: 1000
+  max_cost_usd: 0.020
+  max_tokens: 1500
+routing:
+  primary: ["openai/gpt-4o-mini"]
+  backups: ["anthropic/claude-3-haiku", "mistral/small"]
+  p95_window_n: 100
+strategy:
+  stream: true
+  retry_on: ["5xx", "rate_limit", "connect_timeout"]
+  fallback_on_latency_ms: 800
+  max_attempts: 4
+  backoff_ms: [100, 250, 500]
+gen:
+  system: |
+    You are RoutePilot's assistant. Be concise and helpful.
+  temperature: 0.2
+  top_p: 0.9
+  stop: ["\n\nUser:"]
+  json_mode: false
+tenancy:
+  per_user_daily_tokens: 40000
+  per_user_rpm: 60
+  timezone: "UTC"
+quality:
+  judge: null
+
