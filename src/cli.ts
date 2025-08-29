@@ -8,6 +8,7 @@ import { usageSummary } from "./quotas.js";
 import { getReceipt, listReceipts } from "./receipts.js";
 import { runAgent } from "./agent.js";
 import { listAgents, createAgent } from "./agents.js";
+import { printFriendlyError } from "./util/errors.js";
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
 
@@ -35,27 +36,34 @@ program
     "also mirror receipt JSON to data/receipts for inspection",
     false
   )
+  .option("--debug", "verbose routing/debug logs", false)
   .action(async (opts) => {
     if (!opts.input && !opts.file) {
       console.error("Provide --input <text> or --file <path>");
       process.exitCode = 1;
       return;
     }
-    const text = opts.input ?? fs.readFileSync(opts.file, "utf8");
-    await infer({
-      policyName: opts.policy,
-      userRef: opts.user,
-      input: text,
-      attach: opts.attach,
-      attachOpts: {
-        maxChars: opts.maxChars,
-        pdfPages: opts.pdfPages,
-        csvMaxRows: opts.csvMaxRows,
-        csvCols: opts.csvCols,
-      },
-      mirrorJson: !!opts["mirrorJson"],
-      json: !!opts["json"],
-    });
+    try {
+      const text = opts.input ?? fs.readFileSync(opts.file, "utf8");
+      await infer({
+        policyName: opts.policy,
+        userRef: opts.user,
+        input: text,
+        attach: opts.attach,
+        attachOpts: {
+          maxChars: opts.maxChars,
+          pdfPages: opts.pdfPages,
+          csvMaxRows: opts.csvMaxRows,
+          csvCols: opts.csvCols,
+        },
+        mirrorJson: !!opts["mirrorJson"],
+        json: !!opts["json"],
+        debug: !!opts["debug"],
+      });
+    } catch (e) {
+      const code = printFriendlyError(e);
+      process.exitCode = code;
+    }
   });
 
 program
@@ -65,10 +73,15 @@ program
   .option("--tz <zone>", "IANA timezone for windowing (defaults to env TZ or Asia/Kolkata)")
   .option("--json", "output JSON", false)
   .action((opts) => {
-    const tz = opts.tz || process.env.TZ || "Asia/Kolkata";
-    const u = usageSummary(opts.user, tz);
-    if (opts.json) console.log(JSON.stringify(u));
-    else console.log(`user=${opts.user} today=${u.tokensToday} month=${u.tokensMonth} (day=${u.day}, tz=${tz})`);
+    try {
+      const tz = opts.tz || process.env.TZ || "Asia/Kolkata";
+      const u = usageSummary(opts.user, tz);
+      if (opts.json) console.log(JSON.stringify(u));
+      else console.log(`user=${opts.user} today=${u.tokensToday} month=${u.tokensMonth} (day=${u.day}, tz=${tz})`);
+    } catch (e) {
+      const code = printFriendlyError(e);
+      process.exitCode = code;
+    }
   });
 
 program
@@ -78,20 +91,25 @@ program
   .option("--limit <n>", "list last N", (v) => parseInt(v, 10), 10)
   .option("--json", "output JSON", false)
   .action((opts) => {
-    if (opts.open) {
-      const r = getReceipt(opts.open);
-      if (!r) {
-        console.error(`No receipt ${opts.open}`);
-        process.exitCode = 1;
+    try {
+      if (opts.open) {
+        const r = getReceipt(opts.open);
+        if (!r) {
+          console.error(`No receipt ${opts.open}`);
+          process.exitCode = 1;
+          return;
+        }
+        if (opts.json) console.log(JSON.stringify(r));
+        else console.log(r);
         return;
       }
-      if (opts.json) console.log(JSON.stringify(r));
-      else console.log(r);
-      return;
+      const rows = listReceipts(opts.limit);
+      if (opts.json) console.log(JSON.stringify(rows));
+      else rows.forEach((r: any) => console.log(`${r.id} ${r.ts} ${r.policy} -> ${r.route_final} ${r.latency_ms}ms $${r.cost_usd}`));
+    } catch (e) {
+      const code = printFriendlyError(e);
+      process.exitCode = code;
     }
-    const rows = listReceipts(opts.limit);
-    if (opts.json) console.log(JSON.stringify(rows));
-    else rows.forEach((r: any) => console.log(`${r.id} ${r.ts} ${r.policy} -> ${r.route_final} ${r.latency_ms}ms $${r.cost_usd}`));
   });
 
 program
@@ -114,24 +132,32 @@ program
   .option("--pdf-pages <spec>", "pdf page ranges, e.g. 1-5,8")
   .option("--csv-max-rows <n>", "csv sample rows (default 50)", (v) => parseInt(v, 10))
   .option("--csv-cols <list>", "csv columns to include, e.g. a,b,c")
+  .option("--debug", "verbose routing/debug logs", false)
   .action(async (opts) => {
     if (opts.input) {
-      const { sessionId } = await runAgent({
-        agentName: opts.agent,
-        userRef: opts.user,
-        input: opts.input,
-        session: opts.session,
-        policyOverride: opts.policy,
-        attach: opts.attach,
-        attachOpts: {
-          maxChars: opts.maxChars,
-          pdfPages: opts.pdfPages,
-          csvMaxRows: opts.csvMaxRows,
-          csvCols: opts.csvCols,
-        },
-      });
-      console.error(`\n(session ${sessionId})`);
-      return;
+      try {
+        const { sessionId } = await runAgent({
+          agentName: opts.agent,
+          userRef: opts.user,
+          input: opts.input,
+          session: opts.session,
+          policyOverride: opts.policy,
+          attach: opts.attach,
+          attachOpts: {
+            maxChars: opts.maxChars,
+            pdfPages: opts.pdfPages,
+            csvMaxRows: opts.csvMaxRows,
+            csvCols: opts.csvCols,
+          },
+          debug: !!opts["debug"],
+        });
+        console.error(`\n(session ${sessionId})`);
+        return;
+      } catch (e) {
+        const code = printFriendlyError(e);
+        process.exitCode = code;
+        return;
+      }
     }
     // interactive mode
     const readline = await import("node:readline/promises");
@@ -141,22 +167,29 @@ program
     while (true) {
       const line = await rl.question("> ");
       if (!line || line.trim().toLowerCase() === "/exit") break;
-      const res = await runAgent({
-        agentName: opts.agent,
-        userRef: opts.user,
-        input: line,
-        session: sessionId,
-        policyOverride: opts.policy,
-        attach: opts.attach,
-        attachOpts: {
-          maxChars: opts.maxChars,
-          pdfPages: opts.pdfPages,
-          csvMaxRows: opts.csvMaxRows,
-          csvCols: opts.csvCols,
-        },
-      });
-      sessionId = res.sessionId;
-      console.error(`\n(session ${sessionId})\n`);
+      try {
+        const res = await runAgent({
+          agentName: opts.agent,
+          userRef: opts.user,
+          input: line,
+          session: sessionId,
+          policyOverride: opts.policy,
+          attach: opts.attach,
+          attachOpts: {
+            maxChars: opts.maxChars,
+            pdfPages: opts.pdfPages,
+            csvMaxRows: opts.csvMaxRows,
+            csvCols: opts.csvCols,
+          },
+          debug: !!opts["debug"],
+        });
+        sessionId = res.sessionId;
+        console.error(`\n(session ${sessionId})\n`);
+      } catch (e) {
+        const code = printFriendlyError(e);
+        process.exitCode = code;
+        break;
+      }
     }
     rl.close();
   });

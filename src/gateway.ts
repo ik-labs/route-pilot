@@ -1,3 +1,5 @@
+import { ConfigError } from "./util/errors.js";
+
 export type ChatParams = {
   model: string;
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
@@ -12,7 +14,14 @@ export type ChatParams = {
 function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v || !v.trim()) {
-    throw new Error(`Missing env ${name}. Add it to your .env`);
+    throw new ConfigError(
+      `Missing env ${name}. Add it to your .env`,
+      name === "AI_GATEWAY_BASE_URL"
+        ? "Get the OpenAI-compatible base from Vercel AI Gateway (usually ends with /api/openai)."
+        : name === "AI_GATEWAY_API_KEY"
+        ? "Create a Gateway key in your Vercel project and paste it here."
+        : undefined
+    );
   }
   return v;
 }

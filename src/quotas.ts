@@ -1,4 +1,5 @@
 import db from "./db.js";
+import { QuotaError } from "./util/errors.js";
 
 const DEFAULT_TZ = "Asia/Kolkata";
 
@@ -31,7 +32,7 @@ export function assertWithinRpm(userRef: string, rpmLimit: number) {
     .prepare("SELECT COUNT(*) as c FROM rpm_events WHERE user_ref=? AND ts>=?")
     .get(userRef, windowStart) as { c: number };
   if ((row?.c ?? 0) >= rpmLimit)
-    throw new Error(`429: rate limit exceeded (${rpmLimit}/min)`);
+    throw new QuotaError("rpm", `rate limit exceeded (${rpmLimit}/min)` , rpmLimit);
   db.prepare("INSERT INTO rpm_events(user_ref, ts) VALUES(?, ?)").run(
     userRef,
     now
@@ -52,7 +53,7 @@ export function addDailyTokens(
     .get(userRef, day) as { tokens: number } | undefined;
   const newTokens = (row?.tokens ?? 0) + tokens;
   if (newTokens > dailyCap)
-    throw new Error(`429: daily token cap reached (${dailyCap})`);
+    throw new QuotaError("daily", `daily token cap reached (${dailyCap})` , dailyCap, day);
   if (row) {
     db.prepare("UPDATE quotas_daily SET tokens=? WHERE user_ref=? AND day=?").run(
       newTokens,

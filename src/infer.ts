@@ -14,6 +14,7 @@ export async function infer({
   attachOpts,
   mirrorJson,
   json,
+  debug,
 }: {
   policyName: string;
   userRef: string;
@@ -22,6 +23,7 @@ export async function infer({
   attachOpts?: AttachOpts;
   mirrorJson?: boolean;
   json?: boolean;
+  debug?: boolean;
 }) {
   const policy = await loadPolicy(policyName);
 
@@ -47,7 +49,9 @@ export async function infer({
     policy.strategy.fallback_on_latency_ms ?? 1500,
     policy.strategy.max_attempts,
     policy.strategy.backoff_ms,
-    policy.gen
+    policy.gen ?? undefined,
+    undefined,
+    !!debug
   );
 
   // Placeholder usage estimate (improve later using real usage)

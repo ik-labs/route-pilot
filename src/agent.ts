@@ -45,6 +45,7 @@ export async function runAgent({
   policyOverride,
   attach,
   attachOpts,
+  debug,
 }: {
   agentName: string;
   userRef: string;
@@ -53,6 +54,7 @@ export async function runAgent({
   policyOverride?: string;
   attach?: string[];
   attachOpts?: AttachOpts;
+  debug?: boolean;
 }) {
   const agent = loadAgent(agentName);
   const policy = await loadPolicy(policyOverride || agent.policy);
@@ -96,8 +98,9 @@ export async function runAgent({
     policy.strategy.fallback_on_latency_ms ?? 1500,
     policy.strategy.max_attempts,
     policy.strategy.backoff_ms,
-    policy.gen,
-    handler
+    policy.gen ?? undefined,
+    handler,
+    !!debug
   );
 
   addMessage(sessionId!, "assistant", captured);

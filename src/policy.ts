@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "yaml";
 import { z } from "zod";
+import { PolicyError } from "./util/errors.js";
 
 const PolicySchema = z.object({
   policy: z.string(),
@@ -35,7 +36,7 @@ const PolicySchema = z.object({
       stop: z.array(z.string()).optional(),
       json_mode: z.boolean().optional(),
     })
-    .optional(),
+    .nullish(),
   quality: z.object({ judge: z.string().nullable().optional() }).optional(),
 });
 
@@ -43,7 +44,18 @@ export type Policy = z.infer<typeof PolicySchema>;
 
 export function loadPolicy(name: string): Policy {
   const file = path.join("policies", `${name}.yaml`);
-  const raw = fs.readFileSync(file, "utf8");
-  const obj = yaml.parse(raw);
-  return PolicySchema.parse(obj);
+  try {
+    const raw = fs.readFileSync(file, "utf8");
+    const obj = yaml.parse(raw);
+    return PolicySchema.parse(obj);
+  } catch (e: any) {
+    if (e?.issues) {
+      const details = e.issues.map((i: any) => `${i.path?.join(".") || "root"}: ${i.message}`);
+      throw new PolicyError(`Invalid policy '${name}' (${file})`, details);
+    }
+    if (e?.code === "ENOENT") {
+      throw new PolicyError(`Policy file not found: ${file}`);
+    }
+    throw new PolicyError(`Failed to load policy '${name}': ${e?.message || e}`);
+  }
 }
