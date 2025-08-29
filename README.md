@@ -90,6 +90,50 @@ mistral/small:            { input: 0.10, output: 0.30 }
   routepilot replay
   ```
 
+## Agents
+
+Agents are named configurations that pair a policy with a system prompt and session memory.
+
+- List agents:
+  ```bash
+  routepilot agents:list
+  routepilot agents:list --json
+  ```
+
+- Create a new agent:
+  ```bash
+  routepilot agents:create --name research-bot --policy balanced-helpdesk \
+    --system "You are ResearchBot. Answer with citations and be concise."
+  # Add --force to overwrite if it already exists
+  ```
+
+- Single-turn chat:
+  ```bash
+  routepilot agent -a support-bot -u alice --input "I can't log in."
+  ```
+
+- Interactive session (memory persisted to SQLite):
+  ```bash
+  routepilot agent -a support-bot -u alice
+  # Type messages, '/exit' to quit; session id prints after replies
+  ```
+
+- Resume a session:
+  ```bash
+  routepilot agent -a support-bot -u alice --session <sessionId> --input "Continue"
+  ```
+
+Agents are defined as YAML files under `agents/`:
+
+```yaml
+agent: support-bot
+policy: balanced-helpdesk
+system: |
+  You are SupportBot, a concise, friendly support assistant.
+```
+
+The policy controls routing, retries, backoff, and generation knobs (`gen`), which apply to agent calls as well.
+
 ## How It Routes
 
 - Starts with the `primary` in your policy.

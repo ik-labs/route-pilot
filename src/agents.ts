@@ -26,3 +26,19 @@ export function listAgents(): string[] {
     .map((f) => f.replace(/\.yaml$/, ""));
 }
 
+export function createAgent(
+  name: string,
+  policy: string,
+  system: string,
+  opts?: { force?: boolean }
+) {
+  const dir = "agents";
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${name}.yaml`);
+  if (fs.existsSync(file) && !opts?.force) {
+    throw new Error(`agents/${name}.yaml already exists (use --force to overwrite)`);
+  }
+  const doc = { agent: name, policy, system };
+  fs.writeFileSync(file, yaml.stringify(doc));
+  return file;
+}

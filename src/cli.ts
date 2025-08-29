@@ -7,6 +7,7 @@ import { infer } from "./infer.js";
 import { usageSummary } from "./quotas.js";
 import { getReceipt, listReceipts } from "./receipts.js";
 import { runAgent } from "./agent.js";
+import { listAgents, createAgent } from "./agents.js";
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
 
@@ -127,6 +128,46 @@ program
       console.error(`\n(session ${sessionId})\n`);
     }
     rl.close();
+  });
+
+program
+  .command("agents:list")
+  .description("List available agents (from agents/*.yaml)")
+  .option("--json", "output JSON", false)
+  .action((opts) => {
+    const agents = listAgents();
+    if (opts.json) {
+      console.log(JSON.stringify(agents));
+      return;
+    }
+    if (!agents.length) {
+      console.log("No agents found. Add YAML files under agents/.");
+      return;
+    }
+    agents.forEach((a) => console.log(a));
+  });
+
+program
+  .command("agents:create")
+  .description("Create a new agent YAML under agents/")
+  .requiredOption("--name <agent>")
+  .requiredOption("--policy <policy>")
+  .option(
+    "--system <text>",
+    "system prompt",
+    "You are an assistant. Be concise and helpful."
+  )
+  .option("--force", "overwrite if exists", false)
+  .action((opts) => {
+    try {
+      const file = createAgent(opts.name, opts.policy, opts.system, {
+        force: !!opts.force,
+      });
+      console.log(`Created ${file}`);
+    } catch (e: any) {
+      console.error(e.message || String(e));
+      process.exitCode = 1;
+    }
   });
 
 program.parseAsync();
