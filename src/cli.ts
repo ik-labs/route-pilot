@@ -2,10 +2,12 @@
 import "dotenv/config";
 import { Command } from "commander";
 import fs from "node:fs";
-import pkg from "../package.json" assert { type: "json" };
-import { infer } from "./infer";
-import { usageSummary } from "./quotas";
-import { getReceipt, listReceipts } from "./receipts";
+import { createRequire } from "node:module";
+import { infer } from "./infer.js";
+import { usageSummary } from "./quotas.js";
+import { getReceipt, listReceipts } from "./receipts.js";
+const require = createRequire(import.meta.url);
+const pkg = require("../package.json");
 
 const program = new Command();
 program

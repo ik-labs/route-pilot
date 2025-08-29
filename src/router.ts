@@ -1,6 +1,6 @@
-import { callGateway, ChatParams } from "./gateway";
-import { streamToStdout } from "./util/stream";
-import { fastestByRecentP95, p95LatencyFor } from "./db";
+import { callGateway, ChatParams } from "./gateway.js";
+import { streamToStdout } from "./util/stream.js";
+import { fastestByRecentP95, p95LatencyFor } from "./db.js";
 
 type RoutePlan = { primary: string[]; backups: string[] };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

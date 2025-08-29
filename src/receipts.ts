@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import db from "./db";
+import db from "./db.js";
 
 export type ReceiptInput = {
   policy: string;

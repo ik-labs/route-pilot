@@ -1,9 +1,9 @@
-import { runWithFallback } from "./router";
-import { writeReceipt } from "./receipts";
-import { loadPolicy } from "./policy";
-import { addDailyTokens, assertWithinRpm } from "./quotas";
-import db from "./db";
-import { estimateCost } from "./rates";
+import { runWithFallback } from "./router.js";
+import { writeReceipt } from "./receipts.js";
+import { loadPolicy } from "./policy.js";
+import { addDailyTokens, assertWithinRpm } from "./quotas.js";
+import db from "./db.js";
+import { estimateCost } from "./rates.js";
 
 export async function infer({
   policyName,

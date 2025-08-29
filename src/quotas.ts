@@ -1,4 +1,4 @@
-import db from "./db";
+import db from "./db.js";
 
 const DEFAULT_TZ = "Asia/Kolkata";
 
