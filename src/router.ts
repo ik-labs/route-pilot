@@ -14,7 +14,8 @@ export async function runWithFallback(
   fallbackOnMs: number,
   maxAttempts: number,
   backoffMs: number[],
-  gen?: { temperature?: number; top_p?: number; stop?: string[]; json_mode?: boolean }
+  gen?: { temperature?: number; top_p?: number; stop?: string[]; json_mode?: boolean },
+  streamHandler?: (res: Response, onFirstChunk: () => void) => Promise<void>
 ) {
   const primaryModel = plan.primary[0];
   const recentP95 = p95LatencyFor(primaryModel, p95WindowN);
@@ -53,7 +54,8 @@ export async function runWithFallback(
         }
       }, fallbackOnMs);
 
-      await streamToStdout(res, () => {
+      const handler = streamHandler ?? streamToStdout;
+      await handler(res, () => {
         firstChunkSeen = true;
       });
 

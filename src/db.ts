@@ -46,6 +46,21 @@ CREATE TABLE IF NOT EXISTS rpm_events (
   user_ref TEXT NOT NULL,
   ts INTEGER NOT NULL           -- epoch ms; prune < now-60s
 );
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  user_ref TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  policy TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  role TEXT NOT NULL,           -- system|user|assistant
+  content TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  FOREIGN KEY(session_id) REFERENCES sessions(id)
+);
 `);
 
 export default db;

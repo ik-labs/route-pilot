@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { infer } from "./infer.js";
 import { usageSummary } from "./quotas.js";
 import { getReceipt, listReceipts } from "./receipts.js";
+import { runAgent } from "./agent.js";
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
 
@@ -85,6 +86,47 @@ program
   .description("Re-run prompts on alternate routes to compare (stub)")
   .action(() => {
     console.log("replay: not implemented (TODO)");
+  });
+
+program
+  .command("agent")
+  .description("Chat with an agent (multi-turn, session memory)")
+  .requiredOption("-a, --agent <name>")
+  .requiredOption("-u, --user <userRef>")
+  .option("--session <id>", "existing session id to resume")
+  .option("--policy <name>", "override policy name defined by agent")
+  .option("--input <text>", "single-turn input; omit for interactive")
+  .action(async (opts) => {
+    if (opts.input) {
+      const { sessionId } = await runAgent({
+        agentName: opts.agent,
+        userRef: opts.user,
+        input: opts.input,
+        session: opts.session,
+        policyOverride: opts.policy,
+      });
+      console.error(`\n(session ${sessionId})`);
+      return;
+    }
+    // interactive mode
+    const readline = await import("node:readline/promises");
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    let sessionId = opts.session as string | undefined;
+    console.log("Enter '/exit' to quit.\n");
+    while (true) {
+      const line = await rl.question("> ");
+      if (!line || line.trim().toLowerCase() === "/exit") break;
+      const res = await runAgent({
+        agentName: opts.agent,
+        userRef: opts.user,
+        input: line,
+        session: sessionId,
+        policyOverride: opts.policy,
+      });
+      sessionId = res.sessionId;
+      console.error(`\n(session ${sessionId})\n`);
+    }
+    rl.close();
   });
 
 program.parseAsync();
