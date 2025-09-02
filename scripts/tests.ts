@@ -6,6 +6,7 @@ import db, { p95LatencyFor } from "../src/db.js";
 import { assertWithinRpm } from "../src/quotas.js";
 import { parseUsageFromHeaders } from "../src/util/usage.js";
 import { writeReceipt, getReceipt } from "../src/receipts.js";
+import { recentSampleCount } from "../src/db.js";
 
 function hmacSha256Hex(text: string, secret = process.env.JWT_SECRET ?? "dev-secret") {
   const h = crypto.createHmac("sha256", secret);
@@ -48,6 +49,7 @@ function testReceiptSigner() {
     policy: "test",
     route_primary: "a",
     route_final: "a",
+    model_path: "a",
     fallback_count: 0,
     latency_ms: 123,
     usage: { prompt: 1, completion: 2, cost: 0.0001 },
@@ -58,6 +60,29 @@ function testReceiptSigner() {
   assert.strictEqual(row.signature, expected, "receipt signature matches HMAC of payload");
 }
 
+function testRedaction() {
+  process.env.ROUTEPILOT_REDACT = '1';
+  process.env.ROUTEPILOT_REDACT_FIELDS = 'secret,token';
+  const rid = writeReceipt({
+    policy: "test",
+    route_primary: "a",
+    route_final: "a",
+    fallback_count: 0,
+    latency_ms: 1,
+    usage: { prompt: 0, completion: 0, cost: 0 },
+    extras: { secret: "should-hide", token: "123", note: "email x@y.com and +1-555-123-4567" }
+  });
+  const row: any = getReceipt(rid);
+  const payload = JSON.parse(row.payload_json);
+  if (payload.meta) {
+    assert.strictEqual(payload.meta.secret, '[redacted]');
+    assert.strictEqual(payload.meta.token, '[redacted]');
+    assert(/\[redacted-email\]/.test(payload.meta.note) && /\[redacted-phone\]/.test(payload.meta.note), 'PII redaction works');
+  }
+  delete process.env.ROUTEPILOT_REDACT;
+  delete process.env.ROUTEPILOT_REDACT_FIELDS;
+}
+
 function testUsageHeaders() {
   const h = new Headers();
   h.set("x-usage-prompt-tokens", "123");
@@ -66,12 +91,31 @@ function testUsageHeaders() {
   assert(u && u.prompt === 123 && u.completion === 45, "usage parsed from headers");
 }
 
+function testRecentSampleCount() {
+  const model = "count/model";
+  // Clear any existing rows for deterministic result
+  db.prepare("DELETE FROM traces WHERE route_final=?").run(model);
+  const base = Date.now();
+  for (let i = 0; i < 7; i++) {
+    db.prepare(
+      `INSERT INTO traces(id, ts, user_ref, policy, route_primary, route_final, latency_ms, tokens, cost_usd)
+       VALUES(?,?,?,?,?,?,?,?,?)`
+    ).run(crypto.randomUUID(), new Date(base - i * 1000).toISOString(), "tester", "test", model, model, 100, 0, 0);
+  }
+  const c5 = recentSampleCount(model, 5);
+  const c10 = recentSampleCount(model, 10);
+  assert.strictEqual(c5, 5, "recentSampleCount respects LIMIT 5");
+  assert.strictEqual(c10, 7, "recentSampleCount caps at available rows (7)");
+}
+
 async function main() {
   await testPolicyParsing();
   testP95Calc();
   testRpmGate();
   testReceiptSigner();
   testUsageHeaders();
+  testRecentSampleCount();
+  testRedaction();
   console.log("tests OK");
 }
 
