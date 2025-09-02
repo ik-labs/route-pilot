@@ -86,6 +86,8 @@ mistral/small:            { input: 0.10, output: 0.30 }
   ```bash
   routepilot receipts --limit 10
   routepilot receipts --open <id> --json
+  # Per-task timeline (for sub-agent chains)
+  routepilot receipts --timeline <taskId>
   ```
 
 - Replay (stub):

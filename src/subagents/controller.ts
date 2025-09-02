@@ -58,6 +58,9 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     parent_id: env.parentId,
     first_token_ms: firstTokenMs ?? null,
     reasons,
+    // extra metadata (stored in payload_json for timeline rendering)
+    // not indexed: safe to add without DB migrations
+    ...(env.agent ? { agent: env.agent } : {}),
   });
 
   const json = safeLastJson(captured) as O;

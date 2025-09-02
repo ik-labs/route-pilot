@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import { infer } from "./infer.js";
 import { usageSummary } from "./quotas.js";
-import { getReceipt, listReceipts } from "./receipts.js";
+import { getReceipt, listReceipts, timelineForTask } from "./receipts.js";
 import { runAgent } from "./agent.js";
 import { listAgents, createAgent } from "./agents.js";
 import { planChain, runChain } from "./subagents/run.js";
@@ -90,9 +90,32 @@ program
   .description("List recent receipts or open one by id")
   .option("--open <id>")
   .option("--limit <n>", "list last N", (v) => parseInt(v, 10), 10)
+  .option("--timeline <taskId>", "show per-hop timeline for a taskId")
   .option("--json", "output JSON", false)
   .action((opts) => {
     try {
+      if (opts.timeline) {
+        const rows = timelineForTask(opts.timeline);
+        if (opts.json) {
+          console.log(JSON.stringify(rows));
+          return;
+        }
+        if (!rows.length) {
+          console.log(`No receipts found for taskId ${opts.timeline}`);
+          return;
+        }
+        rows.forEach((r: any, i: number) => {
+          const head = `#${i + 1}`.padEnd(4);
+          const agent = (r.agent ?? "").padEnd(14);
+          const route = r.route ?? "?";
+          const lat = `${r.latency_ms ?? "-"}ms`;
+          const first = r.first_token_ms != null ? `${r.first_token_ms}ms` : "-";
+          const fall = `${r.fallbacks}`;
+          const reasons = r.reasons && r.reasons.length ? ` [reasons: ${r.reasons.join(",")}]` : "";
+          console.log(`${head} ${agent} -> ${route}  latency=${lat} first=${first} fallbacks=${fall}${reasons}`);
+        });
+        return;
+      }
       if (opts.open) {
         const r = getReceipt(opts.open);
         if (!r) {
