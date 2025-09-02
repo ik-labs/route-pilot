@@ -1,0 +1,31 @@
+policy: premium-brief
+objectives:
+  p95_latency_ms: 1200
+  max_cost_usd: 0.015
+  max_tokens: 1200
+routing:
+  primary: ["openai/gpt-4o-mini"]
+  backups: ["anthropic/claude-3-haiku", "mistral/small"]
+  p95_window_n: 100
+  params:
+    "openai/gpt-4o-mini": { temperature: 0.2, top_p: 0.9 }
+    "anthropic/claude-3-haiku": { temperature: 0.2, top_p: 0.95 }
+strategy:
+  stream: true
+  retry_on: ["5xx", "rate_limit"]
+  fallback_on_latency_ms: 1200
+  max_attempts: 3
+  backoff_ms: [100, 300]
+  first_chunk_gate_ms: 250
+gen:
+  system: |
+    You are a concise, helpful assistant. Prefer short, high-quality answers.
+  temperature: 0.2
+  top_p: 0.9
+tenancy:
+  per_user_daily_tokens: 30000
+  per_user_rpm: 45
+  timezone: "UTC"
+quality:
+  judge: null
+

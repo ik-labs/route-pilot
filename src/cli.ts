@@ -326,6 +326,7 @@ program
   .option("--csv-max-rows <n>", "csv sample rows (default 50)", (v) => parseInt(v, 10))
   .option("--csv-cols <list>", "csv columns to include, e.g. a,b,c")
   .option("--usage-probe", "probe prompt tokens with a cheap non-stream call when headers are absent", false)
+  .option("--receipts-per-message", "write a receipt for each agent turn (taskId=session)", false)
   .option("--debug", "verbose routing/debug logs", false)
   .action(async (opts) => {
     if (opts.input) {
@@ -344,6 +345,7 @@ program
             csvCols: opts.csvCols,
           },
           usageProbe: !!opts["usageProbe"],
+          receiptsPerMessage: !!opts["receiptsPerMessage"],
           debug: !!opts["debug"],
         });
         console.error(`\n(session ${sessionId})`);
@@ -377,6 +379,7 @@ program
             csvCols: opts.csvCols,
           },
           usageProbe: !!opts["usageProbe"],
+          receiptsPerMessage: !!opts["receiptsPerMessage"],
           debug: !!opts["debug"],
         });
         sessionId = res.sessionId;

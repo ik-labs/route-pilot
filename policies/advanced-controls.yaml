@@ -3,10 +3,6 @@ objectives:
   p95_latency_ms: 1000
   max_cost_usd: 0.020
   max_tokens: 1500
-routing:
-  primary: ["openai/gpt-4o-mini"]
-  backups: ["anthropic/claude-3-haiku", "mistral/small"]
-  p95_window_n: 100
 strategy:
   stream: true
   retry_on: ["5xx", "rate_limit", "connect_timeout"]

@@ -151,6 +151,11 @@ Agents are named configurations that pair a policy with a system prompt and sess
   routepilot agent -a support-bot -u alice
   # Type messages, '/exit' to quit; session id prints after replies
   ```
+  - Optional: write a receipt per message (taskId = session)
+    ```bash
+    routepilot agent -a support-bot -u alice --receipts-per-message
+    # Add ROUTEPILOT_SNAPSHOT_INPUT=1 to include input/output snapshots in receipt payloads
+    ```
 
 - Single-turn with attachments (pdf, csv, txt, md):
   ```bash

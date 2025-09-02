@@ -7,6 +7,7 @@ import { estimateCost } from "./rates.js";
 import { runWithFallback } from "./router.js";
 import { streamSSEToBufferAndStdout } from "./util/stream.js";
 import { buildAttachmentMessage, AttachOpts } from "./util/files.js";
+import { writeReceipt } from "./receipts.js";
 import { sha256Hex } from "./util/hash.js";
 
 function uuid() { return crypto.randomUUID(); }
@@ -47,6 +48,7 @@ export async function runAgent({
   attach,
   attachOpts,
   usageProbe,
+  receiptsPerMessage,
   debug,
 }: {
   agentName: string;
@@ -57,6 +59,7 @@ export async function runAgent({
   attach?: string[];
   attachOpts?: AttachOpts;
   usageProbe?: boolean;
+  receiptsPerMessage?: boolean;
   debug?: boolean;
 }) {
   const agent = loadAgent(agentName);
@@ -80,8 +83,9 @@ export async function runAgent({
     ...history.map((m) => ({ role: m.role as any, content: m.content })),
     { role: "user", content: input },
   ];
+  let attachmentBlock: string | undefined;
   if (attach && attach.length) {
-    const attachmentBlock = await buildAttachmentMessage(attach, attachOpts ?? {});
+    attachmentBlock = await buildAttachmentMessage(attach, attachOpts ?? {});
     messages.push({ role: "user", content: attachmentBlock });
   }
 
@@ -93,7 +97,7 @@ export async function runAgent({
   };
 
   const start = Date.now();
-  const { routeFinal, fallbackCount, latency, usagePrompt, usageCompletion } = await runWithFallback(
+  const { routeFinal, fallbackCount, latency, firstTokenMs, reasons, usagePrompt, usageCompletion } = await runWithFallback(
     { primary: policy.routing.primary, backups: policy.routing.backups },
     policy.objectives.p95_latency_ms,
     policy.routing.p95_window_n,
@@ -132,6 +136,28 @@ export async function runAgent({
   process.stderr.write(
     `\n[session ${sessionId}] route=${routeFinal} fallbacks=${fallbackCount} latency=${latency}ms\n`
   );
+
+  // Optional per-message receipt for session turns
+  if (receiptsPerMessage) {
+    const includeSnapshot = process.env.ROUTEPILOT_SNAPSHOT_INPUT === '1';
+    const last = db.prepare("SELECT id FROM receipts WHERE task_id=? ORDER BY ts DESC LIMIT 1").get(sessionId!) as { id: string } | undefined;
+    const rid = writeReceipt({
+      policy: policy.policy,
+      route_primary: policy.routing.primary[0],
+      route_final: routeFinal,
+      fallback_count: fallbackCount,
+      latency_ms: latency,
+      first_token_ms: firstTokenMs ?? null,
+      reasons,
+      usage: { prompt: usage.prompt, completion: usage.completion, cost: estimateCost(routeFinal, usage.prompt, usage.completion) },
+      task_id: sessionId!,
+      parent_id: last?.id ?? null,
+      prompt_hash: sha256Hex(input + (attachmentBlock ? `\n\n${attachmentBlock}` : "")),
+      extras: includeSnapshot ? { input_snapshot: input, attachments_snapshot: attachmentBlock, assistant_snapshot: captured } : undefined,
+    });
+    // Print receipt id for visibility
+    process.stderr.write(` [receipt ${rid}]`);
+  }
 
   // Record trace for p95 routing decisions (per model)
   db.prepare(

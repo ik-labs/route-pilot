@@ -1,0 +1,27 @@
+policy: cheap-fast
+objectives:
+  p95_latency_ms: 900
+  max_cost_usd: 0.008
+  max_tokens: 900
+routing:
+  primary: ["mistral/small"]
+  backups: ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"]
+  p95_window_n: 50
+strategy:
+  stream: true
+  retry_on: ["5xx", "rate_limit"]
+  fallback_on_latency_ms: 800
+  max_attempts: 3
+  backoff_ms: [100, 250]
+  first_chunk_gate_ms: 200
+gen:
+  # Cheap/fast defaults; keep outputs concise
+  temperature: 0.3
+  top_p: 0.9
+tenancy:
+  per_user_daily_tokens: 20000
+  per_user_rpm: 60
+  timezone: "Asia/Kolkata"
+quality:
+  judge: null
+
