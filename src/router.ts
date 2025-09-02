@@ -129,6 +129,15 @@ export async function runWithFallback(
         const Y = "\x1b[33m"; const R = "\x1b[0m";
         process.stderr.write(`${Y}[fallback] ${model} ${reason} after ${Date.now() - attemptStart}ms → trying ${next}${R}\n`);
       }
+      // Optional escalation toast after repeated fallbacks per policy
+      if (debug && fallbackCount >= (Array.isArray(backoffMs) ? 0 : 0)) {}
+      const escalateAfterEnv = parseInt(process.env.ROUTEPILOT_ESCALATE_AFTER || '0', 10);
+      const escalateAfter = Number.isFinite(escalateAfterEnv) ? escalateAfterEnv : 0;
+      const threshold = escalateAfter;
+      if (threshold > 0 && fallbackCount >= threshold && process.stderr.isTTY) {
+        const Rr = "\x1b[31m"; const R0 = "\x1b[0m";
+        process.stderr.write(`${Rr}[escalate] fallbacks=${fallbackCount} threshold=${threshold}${R0}\n`);
+      }
       const backoff = backoffMs[Math.min(fallbackCount - 1, backoffMs.length - 1)] ?? 100;
       await sleep(backoff);
       continue;
