@@ -53,6 +53,7 @@ export async function infer({
     policy.strategy.backoff_ms,
     policy.strategy.first_chunk_gate_ms,
     policy.gen ?? undefined,
+    policy.routing.params ?? undefined,
     undefined,
     !!debug
   );

@@ -7,6 +7,8 @@ import { parseUsageFromHeaders } from "./util/usage.js";
 type RoutePlan = { primary: string[]; backups: string[] };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+type RouteParams = { temperature?: number; top_p?: number; stop?: string[]; json_mode?: boolean };
+
 export async function runWithFallback(
   plan: RoutePlan,
   targetP95: number,
@@ -18,6 +20,7 @@ export async function runWithFallback(
   backoffMs: number[],
   firstChunkGateMs: number,
   gen?: { temperature?: number; top_p?: number; stop?: string[]; json_mode?: boolean },
+  routeParams?: Record<string, RouteParams>,
   streamHandler?: (res: Response, onFirstChunk: () => void) => Promise<void>,
   debug?: boolean
 ) {
@@ -63,11 +66,13 @@ export async function runWithFallback(
       if (process.env.CHAOS_HTTP_5XX === '1' && model === primaryModel) {
         throw new GatewayError('HTTP 503 Service Unavailable (chaos)', 503, 'chaos');
       }
+      const perModel = routeParams?.[model] ?? {};
+      const merged = { ...(gen || {}), ...perModel } as RouteParams;
       const call: ChatParams = { model, messages, max_tokens: maxTokens, stream: true };
-      if (gen?.temperature !== undefined) call.temperature = gen.temperature;
-      if (gen?.top_p !== undefined) call.top_p = gen.top_p;
-      if (gen?.stop) call.stop = gen.stop;
-      if (gen?.json_mode) call.response_format = { type: "json_object" };
+      if (merged.temperature !== undefined) call.temperature = merged.temperature;
+      if (merged.top_p !== undefined) call.top_p = merged.top_p;
+      if (merged.stop) call.stop = merged.stop;
+      if (merged.json_mode) call.response_format = { type: "json_object" };
       const res = await callGateway(call, ac.signal);
       if (!res.ok) {
         let body = "";

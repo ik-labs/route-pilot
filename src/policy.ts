@@ -15,6 +15,16 @@ const PolicySchema = z.object({
     primary: z.array(z.string()).min(1),
     backups: z.array(z.string()).default([]),
     p95_window_n: z.number().int().positive().default(50),
+    params: z
+      .record(
+        z.object({
+          temperature: z.number().min(0).max(2).optional(),
+          top_p: z.number().min(0).max(1).optional(),
+          stop: z.array(z.string()).optional(),
+          json_mode: z.boolean().optional(),
+        })
+      )
+      .optional(),
   }),
   strategy: z.object({
     stream: z.boolean().default(true),

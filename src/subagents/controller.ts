@@ -52,6 +52,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     policy.strategy.backoff_ms,
     policy.strategy.first_chunk_gate_ms,
     { ...(policy.gen || {}), json_mode: true },
+    policy.routing.params ?? undefined,
     handler,
     false
   );

@@ -102,6 +102,7 @@ export async function runAgent({
     policy.strategy.backoff_ms,
     policy.strategy.first_chunk_gate_ms,
     policy.gen ?? undefined,
+    policy.routing.params ?? undefined,
     handler,
     !!debug
   );

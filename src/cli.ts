@@ -72,13 +72,18 @@ program
   .description("Show per-user usage totals (today and month to date)")
   .requiredOption("-u, --user <userRef>")
   .option("--tz <zone>", "IANA timezone for windowing (defaults to env TZ or Asia/Kolkata)")
+  .option("--reset", "reset today's token count for the user", false)
   .option("--json", "output JSON", false)
   .action((opts) => {
     try {
       const tz = opts.tz || process.env.TZ || "Asia/Kolkata";
+      if (opts.reset) {
+        const { resetDailyTokens } = require("./quotas.js");
+        resetDailyTokens(opts.user, tz);
+      }
       const u = usageSummary(opts.user, tz);
       if (opts.json) console.log(JSON.stringify(u));
-      else console.log(`user=${opts.user} today=${u.tokensToday} month=${u.tokensMonth} (day=${u.day}, tz=${tz})`);
+      else console.log(`user=${opts.user} today=${u.tokensToday} month=${u.tokensMonth} (day=${u.day}, tz=${tz}) resetsAt=${u.resetsAt}`);
     } catch (e) {
       const code = printFriendlyError(e);
       process.exitCode = code;

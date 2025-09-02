@@ -34,6 +34,7 @@ export async function replayPrompt(
       [0],                   // no backoff needed
       policy.strategy.first_chunk_gate_ms,
       policy.gen ?? undefined,
+      policy.routing.params ?? undefined,
       async (res, onFirst) => { await streamSSEToVoid(res, onFirst); },
       false
     );
@@ -57,4 +58,3 @@ export async function replayPrompt(
 
   return { policy: policy.policy, primary: basePrimary, results, suggestedPatch };
 }
-
