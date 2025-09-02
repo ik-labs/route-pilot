@@ -207,7 +207,10 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
 - Parallel variant (fan-out + reduce):
   ```bash
   routepilot agents:plan --name helpdesk-par --text "Order 123 arrived damaged." --json
+  # Run with both branches (default)
   routepilot agents:run  --name helpdesk-par --text "Order 123 arrived damaged."
+  # Early-stop: cancel slower branch when first completes
+  routepilot agents:run  --name helpdesk-par --text "Order 123" --early-stop
   ```
 
 - HTTP fetch variant (demo):
@@ -229,6 +232,7 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
 - Parallel fan-out (library helpers for future chains):
   - `runFanOut(taskId, parentReceiptId, branches[])` — runs branches in parallel; each child gets `parent_id = parentReceiptId`.
   - `reduceFanOut(taskId, parentReceiptId, aggregatorAgent, branches, budget, context)` — runs a reducer with `parent_id = parentReceiptId` and includes `children_receipts` in receipt payload meta.
+  - Early-stop: set `--early-stop` or `ROUTEPILOT_EARLY_STOP=1` to cancel the slower branches; aggregator receipt includes `cancelled_agents`.
   - Timeline `--tree` will show branches under the parent node; reducer appears as a sibling under the same parent.
 
 - Replay retriever steps (per-chain):
