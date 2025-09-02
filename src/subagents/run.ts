@@ -6,10 +6,10 @@ import { runWithFallback } from "../router.js";
 import { streamSSEToVoid } from "../util/stream.js";
 import { estimateCost } from "../rates.js";
 
-export async function runChain(name: string, opts: { text?: string }) {
+export async function runChain(name: string, opts: { text?: string; earlyStop?: boolean }) {
   if (!opts.text) throw new Error("--text is required");
   if (name === "helpdesk") return helpdeskChain(opts.text);
-  if (name === "helpdesk-par" || name === "helpdesk-parallel") return helpdeskParallelChain(opts.text);
+  if (name === "helpdesk-par" || name === "helpdesk-parallel") return helpdeskParallelChain(opts.text, { earlyStop: !!opts.earlyStop });
   if (name === "helpdesk-http") return helpdeskHttpChain(opts.text);
   throw new Error(`Unknown chain '${name}' (supported: helpdesk, helpdesk-par)`);
 }

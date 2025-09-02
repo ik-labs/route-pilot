@@ -219,7 +219,7 @@ export async function helpdeskChain(text: string) {
   return { taskId, draft: writer.output.draft, triage: triage.output, records };
 }
 
-export async function helpdeskParallelChain(text: string) {
+export async function helpdeskParallelChain(text: string, opts?: { earlyStop?: boolean }) {
   const taskId = uuid();
   // 1) Triage
   const triage = await runSubAgent<{ text: string }, { intent: string; fields?: string[] }>({
@@ -235,10 +235,11 @@ export async function helpdeskParallelChain(text: string) {
   if (!('overBudget' in triage && (triage as any).overBudget) && (triage.output?.fields?.length)) {
     const ids = triage.output.fields;
     // 2) Fan-out: Fast + Accurate retrievers
-    const branches = await runFanOut(taskId, triage.receiptId!, [
+    const fan = await runFanOut(taskId, triage.receiptId!, [
       { agent: "RetrieverFast",     input: { ids }, budget: { tokens: 500, costUsd: 0.0015, timeMs: 900 } },
       { agent: "RetrieverAccurate", input: { ids }, budget: { tokens: 600, costUsd: 0.0020, timeMs: 1200 } },
-    ], { earlyStop: process.env.ROUTEPILOT_EARLY_STOP === '1' });
+    ], { earlyStop: opts?.earlyStop ?? (process.env.ROUTEPILOT_EARLY_STOP === '1') });
+    const branches = fan.results;
     // 3) Aggregator
     const agg = await reduceFanOut(
       taskId,
@@ -246,7 +247,8 @@ export async function helpdeskParallelChain(text: string) {
       "AggregatorAgent",
       branches.map((b) => ({ receiptId: b.receiptId!, output: b.output })),
       { tokens: 600, costUsd: 0.002, timeMs: 900 },
-      { ids }
+      { ids },
+      fan.cancelledAgents
     );
     aggregated = agg.output;
   }
@@ -339,14 +341,15 @@ export async function runFanOut(
         runSubAgent({ envelopeVersion: "1", taskId, parentId: parentReceiptId, agent: b.agent, policy: "", budget: b.budget, input: b.input, context: b.context, constraints: b.constraints })
       )
     );
-    return results;
+    return { results, cancelledAgents: [] } as any;
   }
   const ctrls = branches.map(() => new AbortController());
   const proms = branches.map((b, i) => runSubAgent({ envelopeVersion: "1", taskId, parentId: parentReceiptId, agent: b.agent, policy: "", budget: b.budget, input: b.input, context: b.context, constraints: b.constraints, abortSignal: ctrls[i].signal }));
   const first = await Promise.race(proms.map((p, idx) => p.then(res => ({ res, idx }))));
   ctrls.forEach((c, i) => { if (i !== first.idx) try { c.abort(); } catch {} });
   await Promise.allSettled(proms);
-  return [first.res];
+  const cancelledAgents = branches.map((b, i) => i === first.idx ? undefined : b.agent).filter(Boolean) as string[];
+  return { results: [first.res], cancelledAgents } as any;
 }
 
 // Helper: reduce fan-out outputs with an aggregator agent
@@ -356,7 +359,8 @@ export async function reduceFanOut(
   aggregatorAgent: string,
   branches: Array<{ receiptId: string; output: any }>,
   budget: { tokens: number; costUsd: number; timeMs: number },
-  context: Record<string, any> = {}
+  context: Record<string, any> = {},
+  cancelledAgents?: string[]
 ) {
   const agg = await runSubAgent({
     envelopeVersion: "1",
@@ -366,7 +370,7 @@ export async function reduceFanOut(
     policy: "",
     budget,
     input: { branches: branches.map((b) => b.output), context },
-    receiptExtras: { children_receipts: branches.map((b) => b.receiptId) },
+    receiptExtras: { children_receipts: branches.map((b) => b.receiptId), ...(cancelledAgents?.length ? { cancelled_agents: cancelledAgents } : {}) },
   });
   return agg;
 }

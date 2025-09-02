@@ -277,11 +277,12 @@ program
   .option("--json", "print a JSON summary at the end", false)
   .option("--usage-probe", "probe prompt tokens for sub-agents when headers are absent (via env)", false)
   .option("--dry-run", "validate plan and schemas only; no model calls", false)
+  .option("--early-stop", "cancel slower parallel branches once one completes", false)
   .action(async (opts) => {
     try {
       if (opts["usageProbe"]) process.env.ROUTEPILOT_USAGE_PROBE = "1";
       if (opts["dryRun"]) process.env.ROUTEPILOT_DRY_RUN = "1";
-      const res = await runChain(opts.name, { text: opts.text });
+      const res = await runChain(opts.name, { text: opts.text, earlyStop: !!opts["earlyStop"] });
       if (opts.json) console.log(JSON.stringify(res));
       else console.error(`\n[chain ${opts.name}] done task=${res.taskId}`);
     } catch (e) {
