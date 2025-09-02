@@ -33,6 +33,10 @@ async function main() {
           } else if (model === 'stub/primary-5xx') {
             res.statusCode = 503;
             res.end('Service Unavailable');
+          } else if (model === 'stub/slow') {
+            sse(res, ['x'], { delayFirstMs: 800, usage: { prompt: 10, completion: 5 } });
+          } else if (model === 'stub/fast') {
+            sse(res, ['y'], { delayFirstMs: 10, usage: { prompt: 10, completion: 5 } });
           } else {
             sse(res, ['ok'], { delayFirstMs: 10, usage: { prompt: 10, completion: 5 } });
           }
@@ -94,6 +98,24 @@ async function main() {
       console.error('5xx fallback failed', { routeFinal, fallbackCount, reasons });
       process.exit(1);
     }
+  }
+
+  // Test external abort via early-stop (simulate fan-out slow/fast)
+  {
+    const ac = new AbortController();
+    const slow = runWithFallback(
+      { primary: ['stub/slow'], backups: [] },
+      1000, 10, [{ role: 'user', content: 'hi' }], 64, 1500, 1, [0], 0, 0, {}, undefined, ac.signal, false
+    );
+    const fast = runWithFallback(
+      { primary: ['stub/fast'], backups: [] },
+      1000, 10, [{ role: 'user', content: 'hi' }], 64, 1500, 1, [0], 0, 0, {}, undefined, undefined, false
+    );
+    const winner = await Promise.race([slow.then(() => 'slow'), fast.then(() => 'fast')]);
+    if (winner !== 'fast') { console.error('early-stop race failed'); process.exit(1); }
+    // Abort slow after fast finishes
+    ac.abort();
+    await Promise.allSettled([slow, fast]);
   }
 
   srv.close();
