@@ -11,6 +11,7 @@ export type ReceiptInput = {
   usage: { prompt: number; completion: number; cost: number };
   mirrorJson?: boolean;
   prompt_hash?: string;
+  policy_hash?: string;
   task_id?: string;
   parent_id?: string;
   first_token_ms?: number | null;
@@ -21,12 +22,12 @@ export type ReceiptInput = {
 export function writeReceipt(data: ReceiptInput) {
   const id = crypto.randomUUID();
   const ts = new Date().toISOString();
-  const payload = { id, ts, ...data, ...(data.extras ? { meta: data.extras } : {}) };
+  const payload = maybeRedact({ id, ts, ...data, ...(data.extras ? { meta: data.extras } : {}) });
   const signature = sign(payload);
 
   db.prepare(
-    `INSERT INTO receipts(id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, prompt_hash, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO receipts(id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, prompt_hash, policy_hash, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     id,
     ts,
@@ -37,6 +38,7 @@ export function writeReceipt(data: ReceiptInput) {
     data.latency_ms,
     data.first_token_ms ?? null,
     data.prompt_hash ?? null,
+    data.policy_hash ?? null,
     data.task_id ?? null,
     data.parent_id ?? null,
     data.reasons ? JSON.stringify(data.reasons) : null,
@@ -62,10 +64,27 @@ function sign(obj: any) {
   return h.digest("hex");
 }
 
+// Optional redaction: if ROUTEPILOT_REDACT=1, scrub simple PII patterns in snapshot/meta fields
+function maybeRedact<T extends Record<string, any>>(obj: T): T {
+  if (process.env.ROUTEPILOT_REDACT !== '1') return obj;
+  const redact = (s: string) => s
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/(?:\+?\d[\s-]?){7,}\d/g, "[redacted-phone]");
+  const clone: any = JSON.parse(JSON.stringify(obj));
+  if (clone.meta) {
+    for (const k of Object.keys(clone.meta)) {
+      if (typeof clone.meta[k] === 'string') clone.meta[k] = redact(clone.meta[k]);
+    }
+  }
+  if (typeof clone.input === 'string') clone.input = redact(clone.input);
+  if (typeof clone.attachments_snapshot === 'string') clone.attachments_snapshot = redact(clone.attachments_snapshot);
+  return clone;
+}
+
 export function getReceipt(id: string) {
   return db
     .prepare(
-      `SELECT id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, prompt_hash, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json
+      `SELECT id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, prompt_hash, policy_hash, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json
        FROM receipts WHERE id=?`
     )
     .get(id);

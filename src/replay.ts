@@ -7,7 +7,8 @@ import { streamSSEToVoid } from "./util/stream.js";
 export async function replayPrompt(
   policyName: string,
   text: string,
-  alts: string[]
+  alts: string[],
+  opts?: { judge?: boolean }
 ) {
   const policy = await loadPolicy(policyName);
   const basePrimary = policy.routing.primary[0];
@@ -45,6 +46,21 @@ export async function replayPrompt(
     results.push({ model: routeFinal, latency_ms: latency, prompt_tokens: prompt, completion_tokens: completion, cost_usd: Number(cost.toFixed(6)) });
   }
 
+  // Optional heuristic judge scoring
+  let scored: Array<any> = [];
+  if (opts?.judge) {
+    const lat = results.map(r => r.latency_ms);
+    const cost = results.map(r => r.cost_usd);
+    const minLat = Math.min(...lat);
+    const minCost = Math.min(...cost);
+    const maxLat = Math.max(...lat);
+    const maxCost = Math.max(...cost);
+    const norm = (v: number, min: number, max: number) => max === min ? 1 : (max - v) / (max - min);
+    scored = results.map(r => ({ ...r, score: Number((0.6 * norm(r.latency_ms, minLat, maxLat) + 0.4 * norm(r.cost_usd, minCost, maxCost)).toFixed(3)) }));
+  } else {
+    scored = results;
+  }
+
   // Suggest backups sorted by latency (keep current primary as is)
   const sorted = [...results].sort((a, b) => a.latency_ms - b.latency_ms).map((r) => r.model);
   const suggestedBackups = sorted.filter((m) => m !== basePrimary);
@@ -57,7 +73,7 @@ export async function replayPrompt(
     },
   };
 
-  return { policy: policy.policy, primary: basePrimary, results, suggestedPatch };
+  return { policy: policy.policy, primary: basePrimary, results: scored, suggestedPatch };
 }
 
 type ReceiptRow = {
@@ -93,16 +109,16 @@ function extractTextFromPayload(payload_json: string | null): string | null {
   }
 }
 
-export async function replayFromReceipt(id: string, alts: string[], policyOverride?: string) {
+export async function replayFromReceipt(id: string, alts: string[], policyOverride?: string, opts?: { judge?: boolean }) {
   const row = loadReceiptWithPayload(id);
   if (!row) throw new Error(`No receipt ${id}`);
   const text = extractTextFromPayload(row.payload_json);
   if (!text) throw new Error(`Receipt ${id} has no input snapshot. Set ROUTEPILOT_SNAPSHOT_INPUT=1 before running to record snapshots.`);
   const policyName = policyOverride || row.policy;
-  return replayPrompt(policyName, text, alts);
+  return replayPrompt(policyName, text, alts, opts);
 }
 
-export async function replayLast(limit: number, alts: string[], policyOverride?: string) {
+export async function replayLast(limit: number, alts: string[], policyOverride?: string, opts?: { judge?: boolean }) {
   const rows = listRecentReceiptsWithPayload(limit);
   const usable = rows
     .map((r) => ({ r, text: extractTextFromPayload(r.payload_json) }))
@@ -118,7 +134,7 @@ export async function replayLast(limit: number, alts: string[], policyOverride?:
   const outputs: any[] = [];
   for (const [policyName, items] of perPolicy.entries()) {
     for (const item of items) {
-      const out = await replayPrompt(policyName, item.text, alts);
+      const out = await replayPrompt(policyName, item.text, alts, opts);
       outputs.push({ receipt: item.id, ...out });
     }
   }

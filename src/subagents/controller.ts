@@ -35,7 +35,9 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
       const urlTemplate = (env.context as any)?.http_fetch?.url_template || process.env.HTTP_FETCH_URL_TEMPLATE;
       if (ids && ids.length && typeof urlTemplate === 'string' && urlTemplate.includes('{id}')) {
         const allowHosts = (process.env.HTTP_FETCH_ALLOWLIST || '').split(/\s*,\s*/).filter(Boolean);
-        const maxFetch = Math.min(ids.length, 3); // cap for safety
+        const envMax = parseInt(process.env.HTTP_FETCH_MAX || '3', 10);
+        const cap = Number.isFinite(envMax) && envMax > 0 ? envMax : 3;
+        const maxFetch = Math.min(ids.length, cap); // cap for safety
         const fetched: any[] = [];
         for (let i = 0; i < maxFetch; i++) {
           const id = ids[i];
@@ -74,6 +76,12 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     process.stderr.write(`\n=== ${env.agent} (policy=${spec.policy}) ===\n`);
   }
 
+  // Dry-run mode: validate only, no network calls or receipts
+  if (process.env.ROUTEPILOT_DRY_RUN === '1') {
+    const stub = createStubOutput(spec);
+    return { receiptId: undefined, output: stub as O, model: 'dry-run', latencyMs: 0, costUsd: 0, fallbacks: 0, overBudget: false } as any;
+  }
+
   const { routeFinal, fallbackCount, latency, firstTokenMs, reasons, usagePrompt, usageCompletion } = await runWithFallback(
     { primary: policy.routing.primary, backups: policy.routing.backups },
     policy.objectives.p95_latency_ms,
@@ -101,6 +109,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     if (usage.completion == null && probe?.completion != null) usage.completion = probe.completion;
   }
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
+  const overBudget = cost > (env.budget.costUsd ?? Infinity) || latency > env.budget.timeMs || fallbackCount >= 2;
   const includeSnapshot = process.env.ROUTEPILOT_SNAPSHOT_INPUT === '1';
   const rid = writeReceipt({
     policy: policy.policy,
@@ -114,10 +123,10 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     first_token_ms: firstTokenMs ?? null,
     reasons,
     prompt_hash: sha256Hex(userPayload),
+    policy_hash: sha256Hex(JSON.stringify(policy)),
     // extra metadata (stored in payload_json for timeline rendering)
     // not indexed: safe to add without DB migrations
-    ...(env.agent ? { agent: env.agent } : {}),
-    extras: { ...(env.receiptExtras || {}), ...(includeSnapshot ? { input_snapshot: userPayload } : {}) },
+    extras: { ...(env.receiptExtras || {}), ...(includeSnapshot ? { input_snapshot: userPayload } : {}), ...(overBudget ? { over_budget: true } : {}) },
   });
 
   // Record trace to support p95-based routing pre-pick for sub-agent models
@@ -143,7 +152,16 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     const msg = `[validate] ${spec.name} output schema warnings: ${v.errors.join("; ")}`;
     process.stderr.write(`\n${msg}\n`);
   }
-  return { receiptId: rid, output: json, model: routeFinal, latencyMs: latency, costUsd: cost };
+  return { receiptId: rid, output: json, model: routeFinal, latencyMs: latency, costUsd: cost, fallbacks: fallbackCount, overBudget } as any;
+}
+
+function createStubOutput(spec: ReturnType<typeof getAgentSpec>): any {
+  const name = spec.name || '';
+  if (/Triage/i.test(name)) return { intent: "dry-run", fields: [] };
+  if (/Retriever/i.test(name)) return { records: [] };
+  if (/Writer/i.test(name)) return { draft: "" };
+  if (/Aggregator/i.test(name)) return { records: [] };
+  return {};
 }
 
 export async function helpdeskChain(text: string) {
@@ -160,7 +178,7 @@ export async function helpdeskChain(text: string) {
 
   // 2) Retrieval (optional)
   let records: any = { records: [] };
-  if (triage.output?.fields?.length) {
+  if (!('overBudget' in triage && (triage as any).overBudget) && (triage.output?.fields?.length)) {
     const ids = triage.output.fields;
     const ret = await runSubAgent<{ ids: string[] }, { records: any[] }>({
       envelopeVersion: "1",
@@ -212,7 +230,7 @@ export async function helpdeskParallelChain(text: string) {
   });
 
   let aggregated: any = { records: [] };
-  if (triage.output?.fields?.length) {
+  if (!('overBudget' in triage && (triage as any).overBudget) && (triage.output?.fields?.length)) {
     const ids = triage.output.fields;
     // 2) Fan-out: Fast + Accurate retrievers
     const branches = await runFanOut(taskId, triage.receiptId!, [
@@ -259,7 +277,7 @@ export async function helpdeskHttpChain(text: string) {
 
   // 2) Retrieval with http_fetch context
   let records: any = { records: [] };
-  if (triage.output?.fields?.length) {
+  if (!('overBudget' in triage && (triage as any).overBudget) && (triage.output?.fields?.length)) {
     const ids = triage.output.fields;
     const urlTemplate = process.env.HTTP_FETCH_URL_TEMPLATE || "https://jsonplaceholder.typicode.com/posts/{id}";
     const ret = await runSubAgent<{ ids: string[] }, { records: any[] }>({

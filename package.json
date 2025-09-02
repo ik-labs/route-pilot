@@ -12,7 +12,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",
-    "test": "tsx scripts/pretest.ts && tsx scripts/tests.ts"
+    "test": "tsx scripts/pretest.ts && tsx scripts/tests.ts",
+    "db:reset": "tsx scripts/db-reset.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",

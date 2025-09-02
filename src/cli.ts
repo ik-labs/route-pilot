@@ -32,6 +32,7 @@ program
   .option("--csv-max-rows <n>", "csv sample rows (default 50)", (v) => parseInt(v, 10))
   .option("--csv-cols <list>", "csv columns to include, e.g. a,b,c")
   .option("--json", "print one-line summary as JSON after stream", false)
+  .option("--shadow <model>", "run a shadow model concurrently (no output)")
   .option(
     "--mirror-json",
     "also mirror receipt JSON to data/receipts for inspection",
@@ -62,6 +63,7 @@ program
         json: !!opts["json"],
         usageProbe: !!opts["usageProbe"],
         debug: !!opts["debug"],
+        shadow: opts.shadow ? String(opts.shadow) : undefined,
       });
     } catch (e) {
       const code = printFriendlyError(e);
@@ -196,6 +198,7 @@ program
   .option("-p, --policy <name>")
   .option("--text <input>")
   .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku,mistral/small'")
+  .option("--judge", "score outputs using a heuristic judge", false)
   .option("--json", "output JSON", false)
   .option("--open <id>", "replay a specific receipt id (requires snapshots)")
   .option("--last <n>", "replay the last N receipts with snapshots", (v) => parseInt(v, 10))
@@ -205,14 +208,14 @@ program
       const { replayPrompt, replayFromReceipt, replayLast } = await import("./replay.js");
       let out: any;
       if (opts.open) {
-        out = await replayFromReceipt(opts.open, alts, opts.policy);
+        out = await replayFromReceipt(opts.open, alts, opts.policy, { judge: !!opts.judge });
       } else if (opts.last) {
-        out = await replayLast(opts.last, alts, opts.policy);
+        out = await replayLast(opts.last, alts, opts.policy, { judge: !!opts.judge });
       } else {
         if (!opts.policy || !opts.text) {
           throw new Error("Provide --policy and --text, or use --open/--last with snapshots");
         }
-        out = await replayPrompt(opts.policy, opts.text, alts);
+        out = await replayPrompt(opts.policy, opts.text, alts, { judge: !!opts.judge });
       }
       if (opts.json) {
         console.log(JSON.stringify(out));
@@ -273,9 +276,11 @@ program
   .requiredOption("--text <input>", "input text for the chain")
   .option("--json", "print a JSON summary at the end", false)
   .option("--usage-probe", "probe prompt tokens for sub-agents when headers are absent (via env)", false)
+  .option("--dry-run", "validate plan and schemas only; no model calls", false)
   .action(async (opts) => {
     try {
       if (opts["usageProbe"]) process.env.ROUTEPILOT_USAGE_PROBE = "1";
+      if (opts["dryRun"]) process.env.ROUTEPILOT_DRY_RUN = "1";
       const res = await runChain(opts.name, { text: opts.text });
       if (opts.json) console.log(JSON.stringify(res));
       else console.error(`\n[chain ${opts.name}] done task=${res.taskId}`);

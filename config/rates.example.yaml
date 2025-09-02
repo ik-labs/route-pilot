@@ -1,0 +1,13 @@
+# Example per-1K token pricing overrides (USD)
+# Copy to config/rates.yaml and adjust per your providers.
+
+openai/gpt-4o-mini:
+  input: 0.15
+  output: 0.60
+anthropic/claude-3-haiku:
+  input: 0.25
+  output: 1.25
+mistral/small:
+  input: 0.10
+  output: 0.30
+

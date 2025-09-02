@@ -6,6 +6,8 @@ import { PolicyError } from "./util/errors.js";
 
 const PolicySchema = z.object({
   policy: z.string(),
+  policy_version: z.number().int().positive().optional(),
+  notes: z.string().optional(),
   objectives: z.object({
     p95_latency_ms: z.number().int().positive(),
     max_cost_usd: z.number().positive(),
@@ -58,6 +60,12 @@ export function loadPolicy(name: string): Policy {
   try {
     const raw = fs.readFileSync(file, "utf8");
     const obj = yaml.parse(raw);
+    // Normalize aliases before validation (e.g., max_retries -> max_attempts)
+    if (obj && obj.strategy) {
+      if (obj.strategy.max_retries != null && obj.strategy.max_attempts == null) {
+        obj.strategy.max_attempts = obj.strategy.max_retries;
+      }
+    }
     return PolicySchema.parse(obj);
   } catch (e: any) {
     if (e?.issues) {

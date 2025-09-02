@@ -17,6 +17,7 @@ export async function infer({
   json,
   usageProbe,
   debug,
+  shadow,
 }: {
   policyName: string;
   userRef: string;
@@ -27,6 +28,7 @@ export async function infer({
   json?: boolean;
   usageProbe?: boolean;
   debug?: boolean;
+  shadow?: string;
 }) {
   const policy = await loadPolicy(policyName);
 
@@ -77,6 +79,7 @@ export async function infer({
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
 
   const promptHash = sha256Hex(input + (attachmentBlock ? `\n\n${attachmentBlock}` : ""));
+  const policyHash = sha256Hex(JSON.stringify(policy));
   const includeSnapshot = process.env.ROUTEPILOT_SNAPSHOT_INPUT === '1';
   const rid = writeReceipt({
     policy: policy.policy,
@@ -89,6 +92,7 @@ export async function infer({
     usage: { ...usage, cost },
     mirrorJson,
     prompt_hash: promptHash,
+    policy_hash: policyHash,
     extras: includeSnapshot ? { input_snapshot: input, attachments_snapshot: attachmentBlock } : undefined,
   });
 
@@ -131,5 +135,41 @@ export async function infer({
     process.stderr.write(
       `\n\n[receipt ${rid}] route=${routeFinal} fallbacks=${fallbackCount} latency=${latency}ms cost=$${summary.cost_usd}\n`
     );
+  }
+
+  // Optional shadow run: measure an alternate model without affecting user output
+  if (shadow) {
+    try {
+      const perModel = (policy.routing.params || {})[shadow] || {};
+      const merged = { ...(policy.gen || {}), ...perModel } as any;
+      await runWithFallback(
+        { primary: [shadow], backups: [] },
+        policy.objectives.p95_latency_ms,
+        policy.routing.p95_window_n,
+        messages,
+        1 + Math.min(policy.objectives.max_tokens ?? 1024, 2048),
+        policy.strategy.fallback_on_latency_ms ?? 1500,
+        1,
+        [0],
+        policy.strategy.first_chunk_gate_ms,
+        merged,
+        undefined,
+        async (res, onFirst) => { const { streamSSEToVoid } = await import('./util/stream.js'); await streamSSEToVoid(res, onFirst); },
+        false
+      );
+      // Write a shadow marker receipt with minimal payload
+      writeReceipt({
+        policy: policy.policy,
+        route_primary: policy.routing.primary[0],
+        route_final: shadow,
+        fallback_count: 0,
+        latency_ms: 0,
+        reasons: ["shadow"],
+        usage: { prompt: usage.prompt, completion: 0, cost: 0 },
+        prompt_hash: promptHash,
+        policy_hash: policyHash,
+        extras: { shadow: true },
+      });
+    } catch {}
   }
 }

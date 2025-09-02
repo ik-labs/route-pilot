@@ -1,7 +1,7 @@
 import { callGateway, ChatParams } from "./gateway.js";
 import { streamSSEToStdout, streamSSEToBufferAndStdoutWithGate } from "./util/stream.js";
 import { GatewayError, RouterError } from "./util/errors.js";
-import { fastestByRecentP95, p95LatencyFor } from "./db.js";
+import { fastestByRecentP95, p95LatencyFor, recentSampleCount } from "./db.js";
 import { parseUsageFromHeaders } from "./util/usage.js";
 
 type RoutePlan = { primary: string[]; backups: string[] };
@@ -26,9 +26,10 @@ export async function runWithFallback(
 ) {
   const primaryModel = plan.primary[0];
   const recentP95 = p95LatencyFor(primaryModel, p95WindowN);
+  const sampleCount = recentSampleCount(primaryModel, p95WindowN);
   const fastestBackup = fastestByRecentP95(plan.backups, p95WindowN);
   const startList =
-    recentP95 != null && recentP95 > targetP95 && fastestBackup
+    recentP95 != null && sampleCount >= 10 && recentP95 > targetP95 && fastestBackup
       ? [fastestBackup, ...plan.primary, ...plan.backups.filter((b) => b !== fastestBackup)]
       : [...plan.primary, ...plan.backups];
 
@@ -125,7 +126,8 @@ export async function runWithFallback(
       const next = tries[i + 1];
       const reason = reasons[reasons.length - 1];
       if (next && process.stderr.isTTY) {
-        process.stderr.write(`[fallback] ${model} ${reason} after ${Date.now() - attemptStart}ms → trying ${next}\n`);
+        const Y = "\x1b[33m"; const R = "\x1b[0m";
+        process.stderr.write(`${Y}[fallback] ${model} ${reason} after ${Date.now() - attemptStart}ms → trying ${next}${R}\n`);
       }
       const backoff = backoffMs[Math.min(fallbackCount - 1, backoffMs.length - 1)] ?? 100;
       await sleep(backoff);

@@ -141,6 +141,7 @@ export async function runAgent({
   if (receiptsPerMessage) {
     const includeSnapshot = process.env.ROUTEPILOT_SNAPSHOT_INPUT === '1';
     const last = db.prepare("SELECT id FROM receipts WHERE task_id=? ORDER BY ts DESC LIMIT 1").get(sessionId!) as { id: string } | undefined;
+    const policyHash = sha256Hex(JSON.stringify(policy));
     const rid = writeReceipt({
       policy: policy.policy,
       route_primary: policy.routing.primary[0],
@@ -153,6 +154,7 @@ export async function runAgent({
       task_id: sessionId!,
       parent_id: last?.id ?? null,
       prompt_hash: sha256Hex(input + (attachmentBlock ? `\n\n${attachmentBlock}` : "")),
+      policy_hash: policyHash,
       extras: includeSnapshot ? { input_snapshot: input, attachments_snapshot: attachmentBlock, assistant_snapshot: captured } : undefined,
     });
     // Print receipt id for visibility

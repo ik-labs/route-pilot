@@ -87,6 +87,7 @@ addColumnIfMissing('receipts', 'task_id', 'task_id TEXT');
 addColumnIfMissing('receipts', 'parent_id', 'parent_id TEXT');
 addColumnIfMissing('receipts', 'reasons', 'reasons TEXT');
 addColumnIfMissing('receipts', 'prompt_hash', 'prompt_hash TEXT');
+addColumnIfMissing('receipts', 'policy_hash', 'policy_hash TEXT');
 
 export function p95LatencyFor(model: string, n = 50): number | null {
   const rows = db
@@ -107,4 +108,11 @@ export function fastestByRecentP95(models: string[], n = 50): string | null {
     if (!best || p95 < best.p95) best = { m, p95 };
   }
   return best?.m ?? null;
+}
+
+export function recentSampleCount(model: string, n = 50): number {
+  const row = db
+    .prepare(`SELECT COUNT(*) as c FROM traces WHERE route_final=? LIMIT ?`)
+    .get(model, n) as { c: number };
+  return row?.c ?? 0;
 }
