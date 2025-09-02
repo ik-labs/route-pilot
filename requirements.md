@@ -357,7 +357,7 @@ program.parseAsync();
    cat data/receipts/<id>.json | jq .
    ```
 
-   * Shows route path, timings, (estimated) tokens, cost, HMAC signature.
+ * Shows route path, timings, (estimated) tokens, cost, HMAC signature.
 
 ---
 
@@ -367,3 +367,285 @@ program.parseAsync();
 * Basic `usage` command reading your quota store.
 * Optional: `--judge` to score outputs when replaying (compare structures, length, or ask a small judge model).
 
+---
+
+# Sub‑Agent Orchestration (new)
+
+Add a coordinator→sub‑agent model where RoutePilot is the policy brain and sub‑agents are skills with their own policies, budgets, and SLOs. This showcases per‑hop routing, fallbacks, and receipts.
+
+## Scope
+
+- Sequential chains: planner/triage → retriever → writer → verifier
+- Parallel fan‑out + reduce: branch to multiple providers/tools, then aggregate
+- Per‑agent policies, budgets, and SLO enforcement through the Gateway
+- Receipts per hop with parent/child correlation for a single task
+
+## Repo layout additions
+
+```
+agents/
+  agents.yaml             # declarative agent spec
+src/agents/
+  registry.ts             # loads/validates agents.yaml (Zod), codegen types
+  controller.ts           # runs sequences and fan‑out, enforces budgets
+  run.ts                  # thin entry used by CLI subcommand
+  types.ts                # TaskEnvelope, AgentSpec, Receipt types
+  tools/
+    http_fetch.ts         # allowlisted HTTP tool with limits
+```
+
+Receipts continue in `data/receipts`, but now record a tree of hops.
+
+## Agent spec (YAML)
+
+`agents/agents.yaml`
+
+```yaml
+agents:
+  - name: TriageAgent
+    description: classify intent & required info
+    input_schema: { type: object, properties: { text: {type: string} }, required: [text] }
+    output_schema: { type: object, properties: { intent: {type: string}, fields: {type: array, items: {type:string}} }, required: [intent] }
+    policy: balanced-helpdesk
+    tools: []
+
+  - name: RetrieverAgent
+    description: fetch account/order info given ids
+    input_schema: { type: object, properties: { ids: {type: array, items: {type: string}} }, required: [ids] }
+    output_schema: { type: object, properties: { records: {type: array, items: {type: object}} }, required: [records] }
+    policy: cheap-fast
+    tools: [http_fetch]
+
+  - name: WriterAgent
+    description: draft final reply with constraints
+    input_schema: { type: object, properties: { context: {type: object}, tone:{type:string} }, required:[context] }
+    output_schema: { type: object, properties: { draft: {type: string} }, required: [draft] }
+    policy: premium-brief
+    tools: []
+```
+
+## Handoff envelope
+
+```ts
+type TaskEnvelope<I,O> = {
+  envelopeVersion: "1";
+  taskId: string;
+  parentId?: string;
+  agent: string;              // e.g., "TriageAgent"
+  agentVersion?: string;
+  policy: string;             // resolved by server from registry
+  budget: { tokens: number; costUsd: number; timeMs: number };
+  input: I;
+  context?: Record<string, any>;
+  constraints?: Record<string, any>;
+};
+```
+
+## Controller flows
+
+- Sequential example: Triage → Retrieve → Write → (Verify optional)
+- Parallel example: Researcher fans out to 2–3 routes/tools, Aggregator reduces
+- Early‑stop parallel branches when a winner emerges to save budget
+
+## CLI additions
+
+- `routepilot agent plan <name> --input <json>`: print plan, budgets, and policies per hop
+- `routepilot agent run <name> --input <json> --stream`: execute chain, stream current sub‑agent
+- `--dry-run`: validate shapes/schemas only; no model calls
+
+## Receipts (per hop)
+
+- Required fields: `taskId`, `parentId`, `agent`, `policy`, `modelPath`, `latencyMs`, `tokens`, `costUsd`, `route`, `fallbacks`, `promptHash`
+- Correlate hops by `taskId` to render an agent timeline
+- Redact PII fields before persistence (allowlist + scrubber)
+
+## Budgets, SLOs, and control
+
+- Enforce token/time/cost budgets server‑side per hop
+- Pre‑pick route if recent p95 for primary > target; escalate on repeated failovers
+- Circuit breaker: two fallbacks or over‑budget → stop/return partial with reason
+- Caps: `max_hops`, `max_tool_calls`, per‑tool allowlists
+
+## Streaming & multiplexing
+
+- SSE tags: prefix events with `event: <agentName|branchId>`; include usage deltas
+- Tolerant JSON collector for final object (balanced braces); prefer `json_schema` when supported
+
+## Security & safety
+
+- `http_fetch` tool: hostname/IP allowlist, max body size, content‑type filters, no internal metadata endpoints
+- Never let model output change policies, tools, or URLs; typed outputs only
+- All provider keys flow via Gateway; no raw creds in sub‑agents
+
+## Acceptance criteria
+
+- Can define 3 agents in YAML and run a sequential chain end‑to‑end via CLI
+- Per‑hop receipts written with parent/child links and costs/latency
+- Policy enforcement observed: pre‑pick + fallback behavior logged
+- `plan`, `run`, and `--dry-run` commands function with schema validation errors surfaced
+
+## Open questions
+
+- Schema evolution for `input_schema`/`output_schema` (versioning and migration)
+- Reducer policy for fan‑out (scoring, termination threshold)
+- Per‑user/day budget ceilings and graceful degradation
+- Multi‑tenancy namespacing for policies and quotas
+- Replay fidelity: snapshot of policy/prompt in receipts for faithful replays
+
+---
+
+# Spec tightening and DX notes (pre-scaffold)
+
+These items tighten the spec to avoid surprises during implementation and demo.
+
+## 1) Storage model (SQLite)
+
+- Unify on SQLite (WAL mode) as the source of truth at `data/routepilot.db`.
+- Optional JSON mirroring with `ROUTEPILOT_MIRROR_JSON=1` for pretty receipts under `data/receipts/`.
+- Useful indices for p95 and quotas:
+
+```sql
+CREATE INDEX IF NOT EXISTS traces_route_ts ON traces(route_final, ts DESC);
+CREATE INDEX IF NOT EXISTS rpm_user_ts     ON rpm_events(user_ref, ts);
+CREATE INDEX IF NOT EXISTS quotas_pk       ON quotas_daily(user_ref, day);
+```
+
+## 2) Receipts schema (expanded)
+
+Include these fields so receipts feel definitive and replayable:
+
+- traceId, taskId, parentId
+- policy, route_primary, route_final, fallbacks (reasons: stall, 5xx, rate_limit)
+- latency_ms, first_token_ms, prompt_tokens, completion_tokens, cost_usd
+- prompt_hash (SHA-256 of input), model_path (provider/model/version if known)
+- signature (HMAC)
+
+Tip: track first-token latency separately; it shows routing value clearly.
+
+## 3) Streaming and fallback behavior
+
+- Gate first chunk for ~200–300ms (`strategy.first_chunk_gate_ms`) before printing to allow safe aborts.
+- Distinguish failures:
+  - Stall: no chunk by `fallback_on_latency_ms` → abort and try next route.
+  - 5xx / rate-limit: exponential backoff then try next route.
+- On switch, print a concise stderr toast:
+
+```
+[fallback] primary stalled at 1500ms → trying anthropic/claude-3-haiku
+```
+
+## 4) Quotas ergonomics
+
+- Keep strict 60s sliding RPM and daily tokens.
+- Friendly 429 with reset time in IST; add `routepilot usage -u <id> --json` → `{ tokensToday, resetsAt }`.
+- Admin convenience: `routepilot usage --reset -u <id>`.
+
+## 5) Rates and cost estimation
+
+- Support `config/rates.yaml` with per-model `{ input, output }` cents/1K; merge overrides by model key.
+- If usage headers aren’t available, estimate tokens; refine later.
+
+## 6) Route pre-pick (enable now)
+
+- Compute recent p95 latency per model from last N traces (e.g., 50).
+- If primary p95 > target, start on fastest backup by p95; keep the ladder for fallback.
+- If sparse data (<10 traces), stick to primary.
+
+## 7) Policy YAML tweaks
+
+Add immediate-use knobs:
+
+```yaml
+policy_version: 1
+strategy:
+  first_chunk_gate_ms: 250
+  max_retries: 2
+  backoff_ms: 120
+routing:
+  params:                 # optional per-route model params
+    "openai/gpt-4o-mini": { temperature: 0.2 }
+notes: "No PII in receipts; concise style."
+```
+
+## 8) Env and DX
+
+- Use dotenv (`import "dotenv/config"`) in CLI.
+- Validate envs on boot; fail with actionable messages.
+- Prefer pnpm; provide `scripts/db:reset`. SQLite at `data/routepilot.db` (WAL).
+
+## 9) CLI ergonomics
+
+- Human output by default; `--json` prints a machine summary at end of `infer`.
+- `--mirror-json` writes pretty receipts to `data/receipts/`.
+- Colorize stderr toasts (fallbacks, quota trips) for visibility.
+
+## 10) Tests and chaos toggles
+
+- Env toggles: `CHAOS_PRIMARY_STALL=1`, `CHAOS_HTTP_5XX=1` to simulate provider issues.
+- Unit tests: policy parser, p95 calc, RPM gate, receipt signer.
+- Integration: stub Gateway server supporting SSE and delayed first chunks.
+
+## CLI command matrix (final)
+
+- infer: `--input/--file`, `--json`, `--mirror-json`, `--policy <name>`, `--user <id>`
+- usage: `--json`, `--reset`
+- receipts: `--list --limit 20`, `--open <id> --json`
+- replay (stub): prints the plan it would run for now
+
+## Sub-agents (light pass to lock in)
+
+- Keep `agents.yaml` + controller; add `taskId` per hop and `parentId` linking.
+- Enforce per-hop budget/time from the envelope; propagate remaining time to later hops.
+- Expect strict JSON outputs validated with Zod; fallback to last-JSON-object extraction when needed.
+
+## Hackathon compliance reminder
+
+- Include a tiny agent app (CLI or one Next.js page) that uses RoutePilot → Gateway to qualify as an agent demo.
+- Show a live fallback and a receipt; transparency resonates with judges.
+
+## Tiny diffs to apply during scaffold
+
+gateway.ts (final URL):
+
+```ts
+const BASE = process.env.AI_GATEWAY_BASE_URL!; // e.g., https://.../api/openai
+const url  = `${BASE}/v1/chat/completions`;
+```
+
+cli.ts (dotenv + JSON flag):
+
+```ts
+#!/usr/bin/env node
+import "dotenv/config";
+import { Command } from "commander";
+import { infer } from "./infer";
+
+const program = new Command().name("routepilot");
+program.command("infer")
+  .requiredOption("-p, --policy <name>")
+  .requiredOption("-u, --user <userRef>")
+  .option("--input <text>")
+  .option("--file <path>")
+  .option("--json", "print a JSON summary after the stream")
+  .option("--mirror-json", "write pretty JSON receipt to data/receipts/")
+  .action(async (opts) => {
+    const text = opts.input ?? require("fs").readFileSync(opts.file, "utf8");
+    const summary = await infer({ policyName: opts.policy, userRef: opts.user, input: text, mirrorJson: !!opts.mirrorJson });
+    if (opts.json) console.log(JSON.stringify(summary));
+  });
+
+program.parseAsync();
+```
+
+infer.ts (return a summary object):
+
+```ts
+// at the end
+return {
+  receiptId: rid,
+  route: routeFinal,
+  fallbacks: fallbackCount,
+  latency_ms: latency,
+  usage
+};
+```
