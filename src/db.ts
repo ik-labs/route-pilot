@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS messages (
   ts TEXT NOT NULL,
   FOREIGN KEY(session_id) REFERENCES sessions(id)
 );
+-- Indices for performance and p95 lookups
+CREATE INDEX IF NOT EXISTS traces_route_ts ON traces(route_final, ts DESC);
+CREATE INDEX IF NOT EXISTS rpm_user_ts     ON rpm_events(user_ref, ts);
+CREATE INDEX IF NOT EXISTS quotas_pk       ON quotas_daily(user_ref, day);
 `);
 
 export default db;

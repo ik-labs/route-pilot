@@ -89,6 +89,7 @@ export async function runAgent({
     captured = await streamSSEToBufferAndStdout(res, onFirstChunk);
   };
 
+  const start = Date.now();
   const { routeFinal, fallbackCount, latency } = await runWithFallback(
     { primary: policy.routing.primary, backups: policy.routing.backups },
     policy.objectives.p95_latency_ms,
@@ -117,6 +118,22 @@ export async function runAgent({
 
   process.stderr.write(
     `\n[session ${sessionId}] route=${routeFinal} fallbacks=${fallbackCount} latency=${latency}ms\n`
+  );
+
+  // Record trace for p95 routing decisions (per model)
+  db.prepare(
+    `INSERT INTO traces(id, ts, user_ref, policy, route_primary, route_final, latency_ms, tokens, cost_usd)
+     VALUES(?,?,?,?,?,?,?,?,?)`
+  ).run(
+    uuid(),
+    new Date(start).toISOString(),
+    userRef,
+    policy.policy,
+    policy.routing.primary[0],
+    routeFinal,
+    latency,
+    usage.prompt + usage.completion,
+    cost
   );
 
   return { sessionId };

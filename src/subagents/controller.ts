@@ -5,6 +5,7 @@ import { loadPolicy } from "../policy.js";
 import { runWithFallback } from "../router.js";
 import { streamSSEToBufferAndStdout } from "../util/stream.js";
 import { writeReceipt } from "../receipts.js";
+import db from "../db.js";
 import { estimateCost } from "../rates.js";
 import { safeLastJson } from "../util/json.js";
 import { validateAgainstSchema } from "./validate.js";
@@ -72,6 +73,22 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     ...(env.agent ? { agent: env.agent } : {}),
     extras: env.receiptExtras,
   });
+
+  // Record trace to support p95-based routing pre-pick for sub-agent models
+  db.prepare(
+    `INSERT INTO traces(id, ts, user_ref, policy, route_primary, route_final, latency_ms, tokens, cost_usd)
+     VALUES(?,?,?,?,?,?,?,?,?)`
+  ).run(
+    rid,
+    new Date().toISOString(),
+    null,
+    policy.policy,
+    policy.routing.primary[0],
+    routeFinal,
+    latency,
+    usage.prompt + usage.completion,
+    cost
+  );
 
   const json = safeLastJson(captured) as O;
   // Light schema validation (warn only)
