@@ -69,7 +69,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
 
   let captured = "";
   const handler = async (res: Response, onFirstChunk: () => void) => {
-    captured = await streamSSEToBufferAndStdout(res, onFirstChunk);
+    captured = await streamSSEToBufferAndStdout(res, onFirstChunk, env.agent);
   };
 
   if (process.stderr.isTTY) {

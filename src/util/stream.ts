@@ -88,7 +88,8 @@ export async function streamSSEToStdout(
 
 export async function streamSSEToBufferAndStdout(
   res: Response,
-  onFirstChunk: () => void
+  onFirstChunk: () => void,
+  tag?: string
 ): Promise<string> {
   if (!res.body) throw new Error("No body");
   const reader = res.body.getReader();
@@ -115,7 +116,7 @@ export async function streamSSEToBufferAndStdout(
           const obj = JSON.parse(data);
           const delta = obj?.choices?.[0]?.delta?.content ?? obj?.choices?.[0]?.text ?? "";
           if (delta) {
-            if (!gotFirst) { gotFirst = true; onFirstChunk(); }
+            if (!gotFirst) { gotFirst = true; onFirstChunk(); if (tag) process.stdout.write(`[${tag}] `); }
             captured += delta;
             process.stdout.write(delta);
           }
@@ -133,7 +134,8 @@ export async function streamSSEToBufferAndStdout(
 // Consume SSE stream, trigger onFirstChunk, but do not write to stdout or buffer output.
 export async function streamSSEToVoid(
   res: Response,
-  onFirstChunk: () => void
+  onFirstChunk: () => void,
+  tag?: string
 ) {
   if (!res.body) throw new Error("No body");
   const reader = res.body.getReader();
