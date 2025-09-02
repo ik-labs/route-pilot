@@ -23,6 +23,7 @@ export async function runWithFallback(
   gen?: { temperature?: number; top_p?: number; stop?: string[]; json_mode?: boolean },
   routeParams?: Record<string, RouteParams>,
   streamHandler?: (res: Response, onFirstChunk: () => void) => Promise<void>,
+  externalAbort?: AbortSignal,
   debug?: boolean
 ) {
   const primaryModel = plan.primary[0];
@@ -52,6 +53,11 @@ export async function runWithFallback(
     attempts++;
     if (debug) process.stderr.write(`\n[route] try ${attempts}/${Math.min(maxAttempts, tries.length)} model=${model}\n`);
     const ac = new AbortController();
+    let abortListener: any;
+    if (externalAbort) {
+      abortListener = () => (ac as any).abort();
+      externalAbort.addEventListener('abort', abortListener);
+    }
     const stallTimer = setTimeout(() => ac.abort(), fallbackOnMs);
     const attemptStart = Date.now();
     let abortedByTimer = false;
@@ -99,6 +105,7 @@ export async function runWithFallback(
 
       clearTimeout(firstChunkTimer);
       clearTimeout(stallTimer);
+      if (externalAbort && abortListener) externalAbort.removeEventListener('abort', abortListener);
       // Attempt to parse usage from headers after successful stream
       try {
         const u = parseUsageFromHeaders(res.headers);

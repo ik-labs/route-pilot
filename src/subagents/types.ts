@@ -28,4 +28,5 @@ export type TaskEnvelope<I = any, O = any> = {
   context?: Record<string, any>;
   constraints?: Record<string, any>;
   receiptExtras?: Record<string, any>;
+  abortSignal?: AbortSignal;
 };

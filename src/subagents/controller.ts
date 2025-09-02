@@ -238,7 +238,7 @@ export async function helpdeskParallelChain(text: string) {
     const branches = await runFanOut(taskId, triage.receiptId!, [
       { agent: "RetrieverFast",     input: { ids }, budget: { tokens: 500, costUsd: 0.0015, timeMs: 900 } },
       { agent: "RetrieverAccurate", input: { ids }, budget: { tokens: 600, costUsd: 0.0020, timeMs: 1200 } },
-    ]);
+    ], { earlyStop: process.env.ROUTEPILOT_EARLY_STOP === '1' });
     // 3) Aggregator
     const agg = await reduceFanOut(
       taskId,
@@ -329,24 +329,24 @@ export async function runFanOut(
     budget: { tokens: number; costUsd: number; timeMs: number };
     context?: Record<string, any>;
     constraints?: Record<string, any>;
-  }>
+  }>,
+  opts?: { earlyStop?: boolean }
 ) {
-  const results = await Promise.all(
-    branches.map((b) =>
-      runSubAgent({
-        envelopeVersion: "1",
-        taskId,
-        parentId: parentReceiptId,
-        agent: b.agent,
-        policy: "", // resolved by registry in runSubAgent
-        budget: b.budget,
-        input: b.input,
-        context: b.context,
-        constraints: b.constraints,
-      })
-    )
-  );
-  return results;
+  const early = opts?.earlyStop ?? (process.env.ROUTEPILOT_EARLY_STOP === '1');
+  if (!early) {
+    const results = await Promise.all(
+      branches.map((b) =>
+        runSubAgent({ envelopeVersion: "1", taskId, parentId: parentReceiptId, agent: b.agent, policy: "", budget: b.budget, input: b.input, context: b.context, constraints: b.constraints })
+      )
+    );
+    return results;
+  }
+  const ctrls = branches.map(() => new AbortController());
+  const proms = branches.map((b, i) => runSubAgent({ envelopeVersion: "1", taskId, parentId: parentReceiptId, agent: b.agent, policy: "", budget: b.budget, input: b.input, context: b.context, constraints: b.constraints, abortSignal: ctrls[i].signal }));
+  const first = await Promise.race(proms.map((p, idx) => p.then(res => ({ res, idx }))));
+  ctrls.forEach((c, i) => { if (i !== first.idx) try { c.abort(); } catch {} });
+  await Promise.allSettled(proms);
+  return [first.res];
 }
 
 // Helper: reduce fan-out outputs with an aggregator agent
