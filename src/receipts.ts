@@ -120,21 +120,19 @@ export function timelineForTask(taskId: string) {
   });
 }
 
-export function listTasks(limit = 20) {
-  return db
-    .prepare(
-      `SELECT task_id as taskId,
-              COUNT(*) as hops,
-              MIN(ts) as started,
-              MAX(ts) as finished,
-              ROUND(COALESCE(SUM(cost_usd),0), 6) as cost_usd
-       FROM receipts
-       WHERE task_id IS NOT NULL
-       GROUP BY task_id
-       ORDER BY finished DESC
-       LIMIT ?`
-    )
-    .all(limit);
+export function listTasks(limit = 20, since?: string) {
+  const sql = `SELECT task_id as taskId,
+                      COUNT(*) as hops,
+                      MIN(ts) as started,
+                      MAX(ts) as finished,
+                      ROUND(COALESCE(SUM(cost_usd),0), 6) as cost_usd
+               FROM receipts
+               WHERE task_id IS NOT NULL ${since ? 'AND ts >= ?' : ''}
+               GROUP BY task_id
+               ORDER BY finished DESC
+               LIMIT ?`;
+  const stmt = db.prepare(sql);
+  return since ? (stmt.all(since, limit) as any) : (stmt.all(limit) as any);
 }
 
 export type TimelineRow = ReturnType<typeof timelineForTask>[number] & { id: string; parent_id: string | null };

@@ -93,8 +93,12 @@ mistral/small:            { input: 0.10, output: 0.30 }
   routepilot receipts --timeline <taskId>
   # With ASCII tree
   routepilot receipts --timeline <taskId> --tree
+  # Only show hops that used tools (adds a [tools] marker)
+  routepilot receipts --timeline <taskId> --tools
   # Group by task (recent tasks summary)
   routepilot receipts --tasks --limit 10
+  # Group by task since a timestamp (ISO); add --json for automation
+  routepilot receipts --tasks --since 2025-09-01T00:00:00Z --limit 20 --json
   ```
 
 - Replay:
@@ -213,9 +217,12 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
   - `reduceFanOut(taskId, parentReceiptId, aggregatorAgent, branches, budget, context)` — runs a reducer with `parent_id = parentReceiptId` and includes `children_receipts` in receipt payload meta.
   - Timeline `--tree` will show branches under the parent node; reducer appears as a sibling under the same parent.
 
-- Replay a chain (stub):
+- Replay retriever steps (per-chain):
   ```bash
+  # Human summary
   routepilot agents:replay --name helpdesk --text "Order 123 arrived damaged." --alts "anthropic/claude-3-haiku,mistral/small"
+  # JSON output for tooling
+  routepilot agents:replay --name helpdesk --text "Order 123 arrived damaged." --alts "anthropic/claude-3-haiku" --json
   ```
 
 - Inspect receipts (now include first_token_ms, fallback reasons, and prompt_hash):

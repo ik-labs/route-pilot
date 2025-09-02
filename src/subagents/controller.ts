@@ -90,8 +90,16 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     false
   );
 
-  // TODO: real usage metering; use estimates for now
-  const usage = { prompt: usagePrompt ?? 300, completion: usageCompletion ?? 200 };
+  // Real usage from headers when available; fallback to estimate; optional usage probe
+  let usage = { prompt: usagePrompt ?? 300, completion: usageCompletion ?? 200 };
+  if (process.env.ROUTEPILOT_USAGE_PROBE === '1' && usagePrompt == null) {
+    const perModel = (policy.routing.params || {})[routeFinal] || {};
+    const merged = { ...(policy.gen || {}), ...perModel } as any;
+    const { probeUsageFromJSON } = await import("../util/usage.js");
+    const probe = await probeUsageFromJSON({ model: routeFinal, messages: messages as any, max_tokens: 1, ...(merged.temperature != null ? { temperature: merged.temperature } : {}), ...(merged.top_p != null ? { top_p: merged.top_p } : {}), ...(merged.stop ? { stop: merged.stop } : {}), ...(merged.json_mode ? { response_format: { type: "json_object" } } : {}) });
+    if (probe?.prompt != null) usage.prompt = probe.prompt;
+    if (usage.completion == null && probe?.completion != null) usage.completion = probe.completion;
+  }
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
   const includeSnapshot = process.env.ROUTEPILOT_SNAPSHOT_INPUT === '1';
   const rid = writeReceipt({

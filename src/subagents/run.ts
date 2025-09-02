@@ -102,6 +102,26 @@ export async function replayRetrievers(name: string, opts: { text?: string; alts
       evals.push(await evaluateAgentOnModel("RetrieverAgent", { ids }, { tokens: 600, costUsd: 0.002, timeMs: 1000 }, undefined, undefined, m));
     }
     out.comparisons.push({ agent: "RetrieverAgent", results: evals });
+    // Also compare Writer using baseline records
+    const { runSubAgent } = await import("./controller.js");
+    const baseRet = await runSubAgent<{ ids: string[] }, { records: any[] }>({
+      envelopeVersion: "1",
+      taskId: crypto.randomUUID(),
+      agent: "RetrieverAgent",
+      policy: "cheap-fast",
+      budget: { tokens: 600, costUsd: 0.002, timeMs: 1000 },
+      input: { ids },
+    } as any);
+    const context = { text, triage: triage.output, records: baseRet.output };
+    const specW = getAgentSpec("WriterAgent");
+    const policyW = await loadPolicy(specW.policy);
+    const baselineW = policyW.routing.primary[0];
+    const modelsW = [baselineW, ...alts.filter((m) => m !== baselineW)];
+    const evalsW: any[] = [];
+    for (const m of modelsW) {
+      evalsW.push(await evaluateAgentOnModel("WriterAgent", { context, tone: "friendly" }, { tokens: 1200, costUsd: 0.006, timeMs: 1500 }, undefined, undefined, m));
+    }
+    out.comparisons.push({ agent: "WriterAgent", results: evalsW });
     return out;
   }
   if (name === "helpdesk-par" || name === "helpdesk-parallel") {
@@ -116,6 +136,45 @@ export async function replayRetrievers(name: string, opts: { text?: string; alts
       }
       out.comparisons.push({ agent: agentName, results: evals });
     }
+    // Compare Aggregator using baseline retriever outputs
+    const { runSubAgent } = await import("./controller.js");
+    const baseA = await runSubAgent<{ ids: string[] }, { records: any[] }>({
+      envelopeVersion: "1",
+      taskId: crypto.randomUUID(),
+      agent: "RetrieverFast",
+      policy: "cheap-fast",
+      budget: { tokens: 500, costUsd: 0.0015, timeMs: 900 },
+      input: { ids },
+    } as any);
+    const baseB = await runSubAgent<{ ids: string[] }, { records: any[] }>({
+      envelopeVersion: "1",
+      taskId: crypto.randomUUID(),
+      agent: "RetrieverAccurate",
+      policy: "balanced-helpdesk",
+      budget: { tokens: 600, costUsd: 0.0020, timeMs: 1200 },
+      input: { ids },
+    } as any);
+    const branches = [baseA.output, baseB.output];
+    const specAgg = getAgentSpec("AggregatorAgent");
+    const policyAgg = await loadPolicy(specAgg.policy);
+    const baselineAgg = policyAgg.routing.primary[0];
+    const modelsAgg = [baselineAgg, ...alts.filter((m) => m !== baselineAgg)];
+    const evalsAgg: any[] = [];
+    for (const m of modelsAgg) {
+      evalsAgg.push(await evaluateAgentOnModel("AggregatorAgent", { branches, context: { ids } }, { tokens: 600, costUsd: 0.002, timeMs: 900 }, undefined, undefined, m));
+    }
+    out.comparisons.push({ agent: "AggregatorAgent", results: evalsAgg });
+    // Optionally compare Writer using aggregated result
+    const context = { text, triage: triage.output, records: evalsAgg[0] ? branches[0] : { records: [] } };
+    const specW = getAgentSpec("WriterAgent");
+    const policyW = await loadPolicy(specW.policy);
+    const baselineW = policyW.routing.primary[0];
+    const modelsW = [baselineW, ...alts.filter((m) => m !== baselineW)];
+    const evalsW: any[] = [];
+    for (const m of modelsW) {
+      evalsW.push(await evaluateAgentOnModel("WriterAgent", { context, tone: "friendly" }, { tokens: 1200, costUsd: 0.006, timeMs: 1500 }, undefined, undefined, m));
+    }
+    out.comparisons.push({ agent: "WriterAgent", results: evalsW });
     return out;
   }
   throw new Error(`Unknown chain '${name}' (supported: helpdesk, helpdesk-par, helpdesk-http)`);

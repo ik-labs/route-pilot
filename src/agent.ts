@@ -46,6 +46,7 @@ export async function runAgent({
   policyOverride,
   attach,
   attachOpts,
+  usageProbe,
   debug,
 }: {
   agentName: string;
@@ -55,6 +56,7 @@ export async function runAgent({
   policyOverride?: string;
   attach?: string[];
   attachOpts?: AttachOpts;
+  usageProbe?: boolean;
   debug?: boolean;
 }) {
   const agent = loadAgent(agentName);
@@ -110,6 +112,15 @@ export async function runAgent({
   addMessage(sessionId!, "assistant", captured);
 
   const usage = { prompt: usagePrompt ?? 300, completion: usageCompletion ?? 200 };
+  // Optional usage probe for prompt tokens if missing
+  if (usageProbe && usagePrompt == null) {
+    const perModel = (policy.routing.params || {})[routeFinal] || {};
+    const merged = { ...(policy.gen || {}), ...perModel } as any;
+    const { probeUsageFromJSON } = await import("./util/usage.js");
+    const probe = await probeUsageFromJSON({ model: routeFinal, messages, max_tokens: 1, ...(merged.temperature != null ? { temperature: merged.temperature } : {}), ...(merged.top_p != null ? { top_p: merged.top_p } : {}), ...(merged.stop ? { stop: merged.stop } : {}), ...(merged.json_mode ? { response_format: { type: "json_object" } } : {}) });
+    if (probe?.prompt != null) usage.prompt = probe.prompt;
+    if (usage.completion == null && probe?.completion != null) usage.completion = probe.completion;
+  }
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
   addDailyTokens(
     userRef,

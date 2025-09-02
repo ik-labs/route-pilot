@@ -37,6 +37,7 @@ program
     "also mirror receipt JSON to data/receipts for inspection",
     false
   )
+  .option("--usage-probe", "probe prompt tokens with a cheap non-stream call when headers are absent", false)
   .option("--debug", "verbose routing/debug logs", false)
   .action(async (opts) => {
     if (!opts.input && !opts.file) {
@@ -59,6 +60,7 @@ program
         },
         mirrorJson: !!opts["mirrorJson"],
         json: !!opts["json"],
+        usageProbe: !!opts["usageProbe"],
         debug: !!opts["debug"],
       });
     } catch (e) {
@@ -97,13 +99,14 @@ program
   .option("--limit <n>", "list last N", (v) => parseInt(v, 10), 10)
   .option("--timeline <taskId>", "show per-hop timeline for a taskId")
   .option("--tree", "render timeline as an ASCII tree", false)
+  .option("--since <iso>", "only show recent tasks since ISO timestamp (for --tasks)")
   .option("--tools", "only show hops that used tools", false)
   .option("--tasks", "list recent tasks (grouped by taskId)", false)
   .option("--json", "output JSON", false)
   .action((opts) => {
     try {
       if (opts.tasks) {
-        const rows = listTasks(opts.limit);
+        const rows = listTasks(opts.limit, opts.since);
         if (opts.json) { console.log(JSON.stringify(rows)); return; }
         if (!rows.length) { console.log("No tasks found."); return; }
         rows.forEach((r: any) => {
@@ -269,8 +272,10 @@ program
   .requiredOption("--name <chain>", "chain name (e.g., helpdesk)")
   .requiredOption("--text <input>", "input text for the chain")
   .option("--json", "print a JSON summary at the end", false)
+  .option("--usage-probe", "probe prompt tokens for sub-agents when headers are absent (via env)", false)
   .action(async (opts) => {
     try {
+      if (opts["usageProbe"]) process.env.ROUTEPILOT_USAGE_PROBE = "1";
       const res = await runChain(opts.name, { text: opts.text });
       if (opts.json) console.log(JSON.stringify(res));
       else console.error(`\n[chain ${opts.name}] done task=${res.taskId}`);
@@ -286,11 +291,13 @@ program
   .requiredOption("--name <chain>")
   .option("--text <input>")
   .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku,mistral/small'")
+  .option("--json", "output JSON", false)
   .action(async (opts) => {
     try {
       const alts = (opts.alts ? String(opts.alts).split(/\s*,\s*/) : []).filter(Boolean);
       const { replayRetrievers } = await import("./subagents/run.js");
       const out = await replayRetrievers(opts.name, { text: opts.text, alts });
+      if (opts.json) { console.log(JSON.stringify(out)); return; }
       // Print human summary
       console.log(`Triage:`, JSON.stringify(out.triage));
       for (const comp of out.comparisons) {
@@ -318,6 +325,7 @@ program
   .option("--pdf-pages <spec>", "pdf page ranges, e.g. 1-5,8")
   .option("--csv-max-rows <n>", "csv sample rows (default 50)", (v) => parseInt(v, 10))
   .option("--csv-cols <list>", "csv columns to include, e.g. a,b,c")
+  .option("--usage-probe", "probe prompt tokens with a cheap non-stream call when headers are absent", false)
   .option("--debug", "verbose routing/debug logs", false)
   .action(async (opts) => {
     if (opts.input) {
@@ -335,6 +343,7 @@ program
             csvMaxRows: opts.csvMaxRows,
             csvCols: opts.csvCols,
           },
+          usageProbe: !!opts["usageProbe"],
           debug: !!opts["debug"],
         });
         console.error(`\n(session ${sessionId})`);
@@ -367,6 +376,7 @@ program
             csvMaxRows: opts.csvMaxRows,
             csvCols: opts.csvCols,
           },
+          usageProbe: !!opts["usageProbe"],
           debug: !!opts["debug"],
         });
         sessionId = res.sessionId;

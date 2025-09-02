@@ -1,4 +1,5 @@
 export type UsageCounts = { prompt?: number; completion?: number; total?: number };
+import { callGateway, ChatParams } from "../gateway.js";
 
 function parseIntSafe(v: string | null | undefined): number | undefined {
   if (!v) return undefined;
@@ -42,3 +43,20 @@ export function parseUsageFromHeaders(h: Headers): UsageCounts | null {
   return null;
 }
 
+// Best-effort usage probe via non-stream JSON response. Returns usage counts when available.
+export async function probeUsageFromJSON(call: Omit<ChatParams, "stream"> & { stream?: false }): Promise<UsageCounts | null> {
+  const res = await callGateway({ ...call, stream: false });
+  if (!res.ok) return null;
+  try {
+    const obj: any = await res.json();
+    const u = obj?.usage;
+    if (!u) return null;
+    const out: UsageCounts = {};
+    if (typeof u.prompt_tokens === 'number') out.prompt = u.prompt_tokens;
+    if (typeof u.completion_tokens === 'number') out.completion = u.completion_tokens;
+    if (typeof u.total_tokens === 'number') out.total = u.total_tokens;
+    return out.prompt != null || out.completion != null || out.total != null ? out : null;
+  } catch {
+    return null;
+  }
+}
