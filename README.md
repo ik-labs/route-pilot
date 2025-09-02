@@ -90,6 +90,8 @@ mistral/small:            { input: 0.10, output: 0.30 }
   routepilot receipts --timeline <taskId>
   # With ASCII tree
   routepilot receipts --timeline <taskId> --tree
+  # Group by task (recent tasks summary)
+  routepilot receipts --tasks --limit 10
   ```
 
 - Replay (stub):

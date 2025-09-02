@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import { infer } from "./infer.js";
 import { usageSummary } from "./quotas.js";
-import { getReceipt, listReceipts, timelineForTask } from "./receipts.js";
+import { getReceipt, listReceipts, timelineForTask, listTasks } from "./receipts.js";
 import { runAgent } from "./agent.js";
 import { listAgents, createAgent } from "./agents.js";
 import { planChain, runChain } from "./subagents/run.js";
@@ -92,9 +92,19 @@ program
   .option("--limit <n>", "list last N", (v) => parseInt(v, 10), 10)
   .option("--timeline <taskId>", "show per-hop timeline for a taskId")
   .option("--tree", "render timeline as an ASCII tree", false)
+  .option("--tasks", "list recent tasks (grouped by taskId)", false)
   .option("--json", "output JSON", false)
   .action((opts) => {
     try {
+      if (opts.tasks) {
+        const rows = listTasks(opts.limit);
+        if (opts.json) { console.log(JSON.stringify(rows)); return; }
+        if (!rows.length) { console.log("No tasks found."); return; }
+        rows.forEach((r: any) => {
+          console.log(`${r.taskId} hops=${r.hops} window=[${r.started} → ${r.finished}] cost=$${r.cost_usd}`);
+        });
+        return;
+      }
       if (opts.timeline) {
         if (opts.tree) {
           const { timelineRowsRaw } = require("./receipts.js");

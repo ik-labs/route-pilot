@@ -47,7 +47,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
   // TODO: real usage metering; use estimates for now
   const usage = { prompt: 300, completion: 200 };
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
-  writeReceipt({
+  const rid = writeReceipt({
     policy: policy.policy,
     route_primary: policy.routing.primary[0],
     route_final: routeFinal,
@@ -64,7 +64,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
   });
 
   const json = safeLastJson(captured) as O;
-  return { output: json, model: routeFinal, latencyMs: latency, costUsd: cost };
+  return { receiptId: rid, output: json, model: routeFinal, latencyMs: latency, costUsd: cost };
 }
 
 export async function helpdeskChain(text: string) {
@@ -86,20 +86,31 @@ export async function helpdeskChain(text: string) {
     const ret = await runSubAgent<{ ids: string[] }, { records: any[] }>({
       envelopeVersion: "1",
       taskId,
-      parentId: taskId,
+      parentId: triage.receiptId,
       agent: "RetrieverAgent",
       policy: "cheap-fast",
       budget: { tokens: 600, costUsd: 0.002, timeMs: 1000 },
       input: { ids },
     });
     records = ret.output;
+    // 3) Writer, parent is retrieval receipt if present
+    const writer = await runSubAgent<{ context: any; tone: string }, { draft: string }>({
+      envelopeVersion: "1",
+      taskId,
+      parentId: ret.receiptId,
+      agent: "WriterAgent",
+      policy: "premium-brief",
+      budget: { tokens: 1200, costUsd: 0.006, timeMs: 1500 },
+      input: { context: { text, triage: triage.output, records }, tone: "friendly" },
+    });
+    return { taskId, draft: writer.output.draft, triage: triage.output, records };
   }
 
-  // 3) Writer
+  // No retrieval, writer parent is triage receipt
   const writer = await runSubAgent<{ context: any; tone: string }, { draft: string }>({
     envelopeVersion: "1",
     taskId,
-    parentId: taskId,
+    parentId: triage.receiptId,
     agent: "WriterAgent",
     policy: "premium-brief",
     budget: { tokens: 1200, costUsd: 0.006, timeMs: 1500 },
