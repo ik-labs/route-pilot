@@ -93,6 +93,14 @@ mistral/small:            { input: 0.10, output: 0.30 }
   routepilot replay
   ```
 
+- Chaos toggles (for demos):
+  ```bash
+  # Simulate primary model stall (forces fallback)
+  CHAOS_PRIMARY_STALL=1 routepilot infer -p balanced-helpdesk -u alice --input "Test"
+  # Simulate a 5xx from primary
+  CHAOS_HTTP_5XX=1 routepilot infer -p balanced-helpdesk -u alice --input "Test"
+  ```
+
 ## Agents
 
 Agents are named configurations that pair a policy with a system prompt and session memory.
@@ -143,6 +151,29 @@ system: |
 
 The policy controls routing, retries, backoff, and generation knobs (`gen`), which apply to agent calls as well.
 
+## Sub-agents (chains)
+
+RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sample helpdesk chain is included using `agents/agents.yaml`.
+
+- Plan a chain:
+  ```bash
+  routepilot agents:plan --name helpdesk --text "Order 123 arrived damaged."
+  # Add --json for a machine-readable plan
+  ```
+
+- Run a chain (streams each hop; writes per-hop receipts):
+  ```bash
+  routepilot agents:run --name helpdesk --text "Order 123 arrived damaged."
+  # Add --json to print a final JSON summary
+  ```
+
+- Inspect receipts (now include first_token_ms and fallback reasons):
+  ```bash
+  routepilot receipts --limit 5 --json
+  ```
+
+Tip: `strategy.first_chunk_gate_ms` buffers initial output to avoid half-printed text during fallbacks. Fallback reasons include `stall`, `5xx`, `rate_limit`, etc.
+
 ## How It Routes
 
 - Starts with the `primary` in your policy.
@@ -161,7 +192,7 @@ The policy controls routing, retries, backoff, and generation knobs (`gen`), whi
 - `objectives.max_cost_usd` — budget hint (not enforced yet per request level).
 - `objectives.max_tokens` — upper bound for completion tokens.
 - `routing.primary` / `routing.backups` — model order; `routing.p95_window_n` — recent sample size for p95.
-- `strategy.stream` — stream responses; `strategy.retry_on` — informational; `strategy.fallback_on_latency_ms` — stall cutoff; `strategy.max_attempts` — cap attempts; `strategy.backoff_ms` — per-attempt backoff.
+- `strategy.stream` — stream responses; `strategy.retry_on` — informational; `strategy.fallback_on_latency_ms` — stall cutoff; `strategy.max_attempts` — cap attempts; `strategy.backoff_ms` — per-attempt backoff; `strategy.first_chunk_gate_ms` — buffer initial stream to allow clean fallbacks.
 - `gen` — optional: `system`, `temperature`, `top_p`, `stop`, `json_mode` (maps to OpenAI `response_format: {type: "json_object"}` when true).
 - `tenancy.per_user_daily_tokens`, `tenancy.per_user_rpm`, `tenancy.timezone` — quotas + clock.
 - Token accounting is placeholder for streaming; cost is estimated via rates. You can refine usage with a follow-up non-stream call if needed.
@@ -197,6 +228,13 @@ The policy controls routing, retries, backoff, and generation knobs (`gen`), whi
   - Verify the Vercel AI Gateway project is configured and the endpoint supports `/v1/chat/completions` with streaming.
 - Receipts/cost look off:
   - The MVP estimates usage for streaming; refine later with provider usage data or a follow-up non-stream call.
+
+## Dev sanity checks
+
+- Minimal sanity tests:
+  ```bash
+  pnpm tsx scripts/sanity.ts
+  ```
 
 ## License
 

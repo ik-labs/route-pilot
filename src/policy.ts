@@ -22,6 +22,7 @@ const PolicySchema = z.object({
     fallback_on_latency_ms: z.number().int().positive().default(1500),
     max_attempts: z.number().int().positive().default(3),
     backoff_ms: z.array(z.number().int().nonnegative()).default([100, 300]),
+    first_chunk_gate_ms: z.number().int().nonnegative().default(250),
   }),
   tenancy: z.object({
     per_user_daily_tokens: z.number().int().positive().default(20000),

@@ -6,22 +6,9 @@ import { runWithFallback } from "../router.js";
 import { streamSSEToBufferAndStdout } from "../util/stream.js";
 import { writeReceipt } from "../receipts.js";
 import { estimateCost } from "../rates.js";
+import { safeLastJson } from "../util/json.js";
 
 function uuid() { return crypto.randomUUID(); }
-
-function safeLastJson(text: string): any {
-  // Find the last balanced {...} top-level block
-  let lastIdx = -1;
-  let depth = 0;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '{') { if (depth === 0) lastIdx = i; depth++; }
-    else if (ch === '}') { depth--; if (depth === 0 && lastIdx !== -1) { try { return JSON.parse(text.slice(lastIdx, i + 1)); } catch {} } }
-  }
-  // Fallback: try to parse whole string
-  try { return JSON.parse(text); } catch {}
-  throw new Error("Failed to extract JSON from model output");
-}
 
 export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
   const spec = getAgentSpec(env.agent);
@@ -51,6 +38,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     Math.min(env.budget.timeMs, policy.strategy.fallback_on_latency_ms ?? env.budget.timeMs),
     policy.strategy.max_attempts,
     policy.strategy.backoff_ms,
+    policy.strategy.first_chunk_gate_ms,
     { ...(policy.gen || {}), json_mode: true },
     handler,
     false

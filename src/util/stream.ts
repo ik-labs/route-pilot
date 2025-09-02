@@ -129,3 +129,70 @@ export async function streamSSEToBufferAndStdout(
   }
   return captured;
 }
+
+// Same as above, but holds initial output for a short gate window.
+// If the provided shouldAbort() returns true during the gate, the buffer is dropped (nothing printed).
+export async function streamSSEToBufferAndStdoutWithGate(
+  res: Response,
+  onFirstChunk: () => void,
+  gateMs: number,
+  shouldAbort: () => boolean
+): Promise<string> {
+  if (!res.body) throw new Error("No body");
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let gotFirst = false;
+  let buffer = "";        // gated buffer not yet flushed
+  let sseBuf = "";         // raw SSE text buffer
+  let total = "";          // total plain-text output captured
+  let doneFlag = false;
+  let gateTimerFired = gateMs === 0;
+  const flush = () => {
+    if (!gateTimerFired || shouldAbort()) return;
+    if (buffer) {
+      process.stdout.write(buffer);
+      total += buffer;
+      buffer = "";
+    }
+  };
+  if (gateMs > 0) {
+    setTimeout(() => {
+      gateTimerFired = true;
+      flush();
+    }, gateMs);
+  }
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    sseBuf += dec.decode(value, { stream: true });
+    // Process SSE events by lines for robustness
+    let idx;
+    while ((idx = sseBuf.indexOf("\n\n")) !== -1) {
+      const event = sseBuf.slice(0, idx);
+      sseBuf = sseBuf.slice(idx + 2);
+      const lines = event.split(/\r?\n/);
+      for (const line of lines) {
+        const m = /^data:\s*(.*)$/.exec(line);
+        if (!m) continue;
+        const data = m[1];
+        if (data === "[DONE]") { doneFlag = true; break; }
+        try {
+          const obj = JSON.parse(data);
+          const delta = obj?.choices?.[0]?.delta?.content ?? obj?.choices?.[0]?.text ?? "";
+          if (delta) {
+            if (!gotFirst) { gotFirst = true; onFirstChunk(); }
+            // Gate: buffer until flush allowed
+            if (!gateTimerFired || shouldAbort()) buffer += delta; else { process.stdout.write(delta); total += delta; }
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (doneFlag) break;
+    }
+    if (doneFlag) break;
+  }
+  // Final flush if allowed and not aborted
+  if (!shouldAbort() && buffer) { process.stdout.write(buffer); total += buffer; buffer = ""; }
+  return total;
+}

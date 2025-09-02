@@ -98,6 +98,7 @@ export async function runAgent({
     policy.strategy.fallback_on_latency_ms ?? 1500,
     policy.strategy.max_attempts,
     policy.strategy.backoff_ms,
+    policy.strategy.first_chunk_gate_ms,
     policy.gen ?? undefined,
     handler,
     !!debug

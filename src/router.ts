@@ -1,5 +1,5 @@
 import { callGateway, ChatParams } from "./gateway.js";
-import { streamSSEToStdout } from "./util/stream.js";
+import { streamSSEToStdout, streamSSEToBufferAndStdoutWithGate } from "./util/stream.js";
 import { GatewayError, RouterError } from "./util/errors.js";
 import { fastestByRecentP95, p95LatencyFor } from "./db.js";
 
@@ -15,6 +15,7 @@ export async function runWithFallback(
   fallbackOnMs: number,
   maxAttempts: number,
   backoffMs: number[],
+  firstChunkGateMs: number,
   gen?: { temperature?: number; top_p?: number; stop?: string[]; json_mode?: boolean },
   streamHandler?: (res: Response, onFirstChunk: () => void) => Promise<void>,
   debug?: boolean
@@ -37,7 +38,8 @@ export async function runWithFallback(
   const attemptErrors: Array<{ model: string; message: string; status?: number }> = [];
 
   let attempts = 0;
-  for (const model of tries) {
+  for (let i = 0; i < tries.length; i++) {
+    const model = tries[i];
     if (attempts >= maxAttempts) break;
     attempts++;
     if (debug) process.stderr.write(`\n[route] try ${attempts}/${Math.min(maxAttempts, tries.length)} model=${model}\n`);
@@ -49,6 +51,15 @@ export async function runWithFallback(
     (ac as any).abort = () => { abortedByTimer = true; origAbort(); };
 
     try {
+      // Chaos toggles
+      const primaryModel = plan.primary[0];
+      if (process.env.CHAOS_PRIMARY_STALL === '1' && model === primaryModel) {
+        await sleep(fallbackOnMs + 50);
+        throw new Error('AbortError: chaos stall');
+      }
+      if (process.env.CHAOS_HTTP_5XX === '1' && model === primaryModel) {
+        throw new GatewayError('HTTP 503 Service Unavailable (chaos)', 503, 'chaos');
+      }
       const call: ChatParams = { model, messages, max_tokens: maxTokens, stream: true };
       if (gen?.temperature !== undefined) call.temperature = gen.temperature;
       if (gen?.top_p !== undefined) call.top_p = gen.top_p;
@@ -68,7 +79,9 @@ export async function runWithFallback(
         }
       }, fallbackOnMs);
 
-      const handler = streamHandler ?? (streamSSEToStdout as any);
+      const handler = streamHandler ?? (async (res: Response, onFirst: () => void) => {
+        return streamSSEToBufferAndStdoutWithGate(res, onFirst, firstChunkGateMs, () => abortedByTimer);
+      });
       await handler(res, () => {
         firstChunkSeen = true;
         if (firstTokenMs == null) firstTokenMs = Date.now() - attemptStart;
@@ -92,6 +105,11 @@ export async function runWithFallback(
         reasons.push('stall');
       } else {
         reasons.push('error');
+      }
+      const next = tries[i + 1];
+      const reason = reasons[reasons.length - 1];
+      if (next && process.stderr.isTTY) {
+        process.stderr.write(`[fallback] ${model} ${reason} after ${Date.now() - attemptStart}ms → trying ${next}\n`);
       }
       const backoff = backoffMs[Math.min(fallbackCount - 1, backoffMs.length - 1)] ?? 100;
       await sleep(backoff);
