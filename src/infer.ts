@@ -40,7 +40,7 @@ export async function infer({
     messages.unshift({ role: "system", content: policy.gen.system });
   }
   const start = Date.now();
-  const { routeFinal, fallbackCount, latency } = await runWithFallback(
+  const { routeFinal, fallbackCount, latency, firstTokenMs, reasons } = await runWithFallback(
     { primary: policy.routing.primary, backups: policy.routing.backups },
     policy.objectives.p95_latency_ms,
     policy.routing.p95_window_n,
@@ -64,6 +64,8 @@ export async function infer({
     route_final: routeFinal,
     fallback_count: fallbackCount,
     latency_ms: latency,
+    first_token_ms: firstTokenMs ?? null,
+    reasons,
     usage: { ...usage, cost },
     mirrorJson,
   });

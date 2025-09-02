@@ -32,6 +32,8 @@ export async function runWithFallback(
   let start = Date.now();
   let routeFinal = "";
   let fallbackCount = 0;
+  let firstTokenMs: number | null = null;
+  const reasons: string[] = [];
   const attemptErrors: Array<{ model: string; message: string; status?: number }> = [];
 
   let attempts = 0;
@@ -41,6 +43,10 @@ export async function runWithFallback(
     if (debug) process.stderr.write(`\n[route] try ${attempts}/${Math.min(maxAttempts, tries.length)} model=${model}\n`);
     const ac = new AbortController();
     const stallTimer = setTimeout(() => ac.abort(), fallbackOnMs);
+    const attemptStart = Date.now();
+    let abortedByTimer = false;
+    const origAbort = ac.abort.bind(ac);
+    (ac as any).abort = () => { abortedByTimer = true; origAbort(); };
 
     try {
       const call: ChatParams = { model, messages, max_tokens: maxTokens, stream: true };
@@ -58,13 +64,14 @@ export async function runWithFallback(
       let firstChunkSeen = false;
       const firstChunkTimer = setTimeout(() => {
         if (!firstChunkSeen) {
-          ac.abort();
+          (ac as any).abort();
         }
       }, fallbackOnMs);
 
       const handler = streamHandler ?? (streamSSEToStdout as any);
       await handler(res, () => {
         firstChunkSeen = true;
+        if (firstTokenMs == null) firstTokenMs = Date.now() - attemptStart;
       });
 
       clearTimeout(firstChunkTimer);
@@ -76,6 +83,16 @@ export async function runWithFallback(
       used.push(model);
       if (debug) process.stderr.write(`[route] fail model=${model} err=${e?.message || e}\n`);
       attemptErrors.push({ model, message: e?.message || String(e), status: e?.status });
+      // Reason classification
+      if (typeof e?.status === 'number') {
+        if (e.status === 429) reasons.push('rate_limit');
+        else if (e.status >= 500) reasons.push('5xx');
+        else reasons.push(`http_${e.status}`);
+      } else if (abortedByTimer || /aborted|AbortError/i.test(String(e?.message))) {
+        reasons.push('stall');
+      } else {
+        reasons.push('error');
+      }
       const backoff = backoffMs[Math.min(fallbackCount - 1, backoffMs.length - 1)] ?? 100;
       await sleep(backoff);
       continue;
@@ -85,5 +102,5 @@ export async function runWithFallback(
   const latency = Date.now() - start;
   if (!routeFinal) throw new RouterError(`All routes failed after ${tries.length} attempts`, attemptErrors);
 
-  return { routeFinal, fallbackCount, latency };
+  return { routeFinal, fallbackCount, latency, firstTokenMs, reasons };
 }

@@ -42,7 +42,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     process.stderr.write(`\n=== ${env.agent} (policy=${spec.policy}) ===\n`);
   }
 
-  const { routeFinal, fallbackCount, latency } = await runWithFallback(
+  const { routeFinal, fallbackCount, latency, firstTokenMs, reasons } = await runWithFallback(
     { primary: policy.routing.primary, backups: policy.routing.backups },
     policy.objectives.p95_latency_ms,
     policy.routing.p95_window_n,
@@ -66,6 +66,10 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     fallback_count: fallbackCount,
     latency_ms: latency,
     usage: { prompt: usage.prompt, completion: usage.completion, cost },
+    task_id: env.taskId,
+    parent_id: env.parentId,
+    first_token_ms: firstTokenMs ?? null,
+    reasons,
   });
 
   const json = safeLastJson(captured) as O;
@@ -113,4 +117,3 @@ export async function helpdeskChain(text: string) {
 
   return { taskId, draft: writer.output.draft, triage: triage.output, records };
 }
-

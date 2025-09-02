@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS receipts (
   route_final TEXT,
   fallback_count INTEGER DEFAULT 0,
   latency_ms INTEGER,
+  first_token_ms INTEGER,
+  task_id TEXT,
+  parent_id TEXT,
+  reasons TEXT,               -- JSON array of reasons for fallbacks
   prompt_tokens INTEGER,
   completion_tokens INTEGER,
   cost_usd REAL,
@@ -64,6 +68,19 @@ CREATE TABLE IF NOT EXISTS messages (
 `);
 
 export default db;
+
+// Best-effort column migration for existing databases
+function addColumnIfMissing(table: string, column: string, ddl: string) {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!info.find((c) => c.name === column)) {
+    try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`); } catch {}
+  }
+}
+
+addColumnIfMissing('receipts', 'first_token_ms', 'first_token_ms INTEGER');
+addColumnIfMissing('receipts', 'task_id', 'task_id TEXT');
+addColumnIfMissing('receipts', 'parent_id', 'parent_id TEXT');
+addColumnIfMissing('receipts', 'reasons', 'reasons TEXT');
 
 export function p95LatencyFor(model: string, n = 50): number | null {
   const rows = db
