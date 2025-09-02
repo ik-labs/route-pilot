@@ -7,6 +7,7 @@ import { streamSSEToBufferAndStdout } from "../util/stream.js";
 import { writeReceipt } from "../receipts.js";
 import { estimateCost } from "../rates.js";
 import { safeLastJson } from "../util/json.js";
+import { validateAgainstSchema } from "./validate.js";
 
 function uuid() { return crypto.randomUUID(); }
 
@@ -14,7 +15,15 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
   const spec = getAgentSpec(env.agent);
   const policy = await loadPolicy(spec.policy);
 
-  const system = `You are ${spec.name}. Output strictly JSON that matches the expected schema. Do not include markdown fences.`;
+  const system = spec.system ?? `You are ${spec.name}. Output strictly JSON that matches the expected schema. Do not include markdown fences.`;
+
+  // Validate input against declared schema (fail fast)
+  const vin = validateAgainstSchema(spec.input_schema as any, env.input);
+  if (!vin.ok) {
+    throw new Error(
+      `Input schema validation failed for ${spec.name}: ${vin.errors.join('; ')}`
+    );
+  }
   const messages = [
     { role: "system", content: system },
     { role: "user", content: JSON.stringify({ input: env.input, context: env.context ?? {}, constraints: env.constraints ?? {} }) },
@@ -65,6 +74,12 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
   });
 
   const json = safeLastJson(captured) as O;
+  // Light schema validation (warn only)
+  const v = validateAgainstSchema(spec.output_schema as any, json);
+  if (!v.ok) {
+    const msg = `[validate] ${spec.name} output schema warnings: ${v.errors.join("; ")}`;
+    process.stderr.write(`\n${msg}\n`);
+  }
   return { receiptId: rid, output: json, model: routeFinal, latencyMs: latency, costUsd: cost };
 }
 

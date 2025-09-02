@@ -179,6 +179,13 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
   routepilot agents:run  --name helpdesk-par --text "Order 123 arrived damaged."
   ```
 
+- AggregatorAgent behavior:
+  - Deterministic merge of branch outputs into `records`.
+  - Dedupe by `id` when present; prefer most complete object; shallow merge.
+  - Stable sort: by `id` ascending or JSON-string order.
+  - Strict JSON output: `{ "records": [...] }` (no fences).
+  - Light output validation: schema mismatch warnings print to stderr (non-fatal).
+
 - Parallel fan-out (library helpers for future chains):
   - `runFanOut(taskId, parentReceiptId, branches[])` — runs branches in parallel; each child gets `parent_id = parentReceiptId`.
   - `reduceFanOut(taskId, parentReceiptId, aggregatorAgent, branches, budget, context)` — runs a reducer with `parent_id = parentReceiptId` and includes `children_receipts` in receipt payload meta.
@@ -195,6 +202,10 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
   ```
 
 Tip: `strategy.first_chunk_gate_ms` buffers initial output to avoid half-printed text during fallbacks. Fallback reasons include `stall`, `5xx`, `rate_limit`, etc.
+
+Validation:
+- Inputs to each sub-agent are validated against their `input_schema` (light JSON Schema subset). If invalid, the run fails fast with a clear error.
+- Outputs are validated against `output_schema` and warnings are printed to stderr on mismatch (non-fatal).
 
 ## How It Routes
 

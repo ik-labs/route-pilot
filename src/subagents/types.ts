@@ -9,6 +9,7 @@ export const AgentSpec = z.object({
   output_schema: JSONSchema.optional(),
   policy: z.string(),
   tools: z.array(z.string()).optional(),
+  system: z.string().optional(),
 });
 
 export type AgentSpecT = z.infer<typeof AgentSpec>;
