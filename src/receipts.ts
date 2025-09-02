@@ -73,8 +73,10 @@ function maybeRedact<T extends Record<string, any>>(obj: T): T {
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
     .replace(/(?:\+?\d[\s-]?){7,}\d/g, "[redacted-phone]");
   const clone: any = JSON.parse(JSON.stringify(obj));
+  const fields = (process.env.ROUTEPILOT_REDACT_FIELDS || '').split(/\s*,\s*/).filter(Boolean);
   if (clone.meta) {
     for (const k of Object.keys(clone.meta)) {
+      if (fields.includes(k)) { clone.meta[k] = '[redacted]'; continue; }
       if (typeof clone.meta[k] === 'string') clone.meta[k] = redact(clone.meta[k]);
     }
   }
