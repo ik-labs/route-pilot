@@ -8,6 +8,7 @@ import { usageSummary } from "./quotas.js";
 import { getReceipt, listReceipts } from "./receipts.js";
 import { runAgent } from "./agent.js";
 import { listAgents, createAgent } from "./agents.js";
+import { planChain, runChain } from "./subagents/run.js";
 import { printFriendlyError } from "./util/errors.js";
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -117,6 +118,40 @@ program
   .description("Re-run prompts on alternate routes to compare (stub)")
   .action(() => {
     console.log("replay: not implemented (TODO)");
+  });
+
+program
+  .command("agents:plan")
+  .description("Print the sub-agent execution plan")
+  .requiredOption("--name <chain>", "chain name (e.g., helpdesk)")
+  .option("--text <input>", "input text for helpdesk chain")
+  .option("--json", "output JSON", false)
+  .action(async (opts) => {
+    try {
+      const plan = await planChain(opts.name, { text: opts.text });
+      if (opts.json) console.log(JSON.stringify(plan));
+      else plan.forEach((s: any) => console.log(`#${s.step} ${s.agent} policy=${s.policy} budget=${JSON.stringify(s.budget)}${s.conditional ? ` (${s.conditional})` : ""}`));
+    } catch (e) {
+      const code = printFriendlyError(e);
+      process.exitCode = code;
+    }
+  });
+
+program
+  .command("agents:run")
+  .description("Run a sub-agent chain (streams per step)")
+  .requiredOption("--name <chain>", "chain name (e.g., helpdesk)")
+  .requiredOption("--text <input>", "input text for the chain")
+  .option("--json", "print a JSON summary at the end", false)
+  .action(async (opts) => {
+    try {
+      const res = await runChain(opts.name, { text: opts.text });
+      if (opts.json) console.log(JSON.stringify(res));
+      else console.error(`\n[chain ${opts.name}] done task=${res.taskId}`);
+    } catch (e) {
+      const code = printFriendlyError(e);
+      process.exitCode = code;
+    }
   });
 
 program

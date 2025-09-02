@@ -1,0 +1,22 @@
+agents:
+  - name: TriageAgent
+    description: classify intent & required info
+    input_schema: { type: object, properties: { text: {type: string} }, required: [text] }
+    output_schema: { type: object, properties: { intent: {type: string}, fields: {type: array, items: {type:string}} }, required: [intent] }
+    policy: balanced-helpdesk
+    tools: []
+
+  - name: RetrieverAgent
+    description: fetch account/order info given ids
+    input_schema: { type: object, properties: { ids: {type: array, items: {type: string}} }, required: [ids] }
+    output_schema: { type: object, properties: { records: {type: array, items: {type: object}} }, required: [records] }
+    policy: cheap-fast
+    tools: [http_fetch]
+
+  - name: WriterAgent
+    description: draft final reply with constraints
+    input_schema: { type: object, properties: { context: {type: object}, tone:{type:string} }, required:[context] }
+    output_schema: { type: object, properties: { draft: {type: string} }, required: [draft] }
+    policy: premium-brief
+    tools: []
+
