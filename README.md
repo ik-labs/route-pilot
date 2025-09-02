@@ -40,8 +40,10 @@ Create a `.env` at the repo root or in your project:
   - `ROUTEPILOT_MIRROR_JSON=1` — also write pretty receipts to `data/receipts/<id>.json`.
   - `JWT_SECRET` — HMAC secret for signing receipt payloads (defaults to `dev-secret`).
   - `ROUTEPILOT_SNAPSHOT_INPUT=1` — include input snapshots in receipt payloads (enables replay from receipts).
+  - `ROUTEPILOT_REDACT=1` — redact basic PII (emails/phones) in mirrored/snapshot fields.
   - `HTTP_FETCH_ALLOWLIST` — comma-separated allowlist for the `http_fetch` tool (e.g., `api.example.com,*.example.org`).
   - `HTTP_FETCH_URL_TEMPLATE` — optional URL template for Retriever-like agents (e.g., `https://jsonplaceholder.typicode.com/posts/{id}`).
+  - `HTTP_FETCH_MAX` — max allowed HTTP fetches per sub-agent (default 3).
 
 Policies live under `policies/`. Starters:
 
@@ -70,12 +72,15 @@ mistral/small:            { input: 0.10, output: 0.30 }
   routepilot infer -p balanced-helpdesk -u alice --input "Summarize: ..."
   # or
   routepilot infer -p balanced-helpdesk -u alice --file prompt.txt
+  # shadow an alternate model concurrently (no visible output)
+  routepilot infer -p balanced-helpdesk -u alice --input "Test" --shadow mistral/small
   # with attachments (pdf, csv, txt, md)
   routepilot infer -p balanced-helpdesk -u alice --input "Summarize the attachment" \
     --attach report.pdf data.csv --pdf-pages 1-5 --csv-max-rows 50 --csv-cols "colA,colB" --max-chars 15000
   # flags
   #   --json         print a single JSON summary line after the stream
   #   --mirror-json  also mirror receipt JSON to data/receipts/
+  #   --shadow       run a shadow model concurrently (no output)
   ```
 
 - Usage (per-user day + month totals):
@@ -103,8 +108,8 @@ mistral/small:            { input: 0.10, output: 0.30 }
 
 - Replay:
   ```bash
-  # Ad-hoc text replay across models
-  routepilot replay -p balanced-helpdesk --text "Write a one-liner about teamwork" --alts "anthropic/claude-3-haiku,mistral/small"
+  # Ad-hoc text replay across models (with heuristic judge scoring)
+  routepilot replay -p balanced-helpdesk --text "Write a one-liner about teamwork" --alts "anthropic/claude-3-haiku,mistral/small" --judge
 
   # Replay a specific receipt (requires snapshots)
   # First, record a receipt with an input snapshot
@@ -192,6 +197,8 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
 - Run a chain (streams each hop; writes per-hop receipts):
   ```bash
   routepilot agents:run --name helpdesk --text "Order 123 arrived damaged."
+  # Dry-run (validate schemas, no model calls)
+  routepilot agents:run --name helpdesk --text "Order 123 arrived damaged." --dry-run
   # Add --json to print a final JSON summary
   ```
 
@@ -326,9 +333,58 @@ Validation:
 - Quick test suite with preflight (rebuild hint if needed):
   ```bash
   pnpm test
+  pnpm test:integration   # runs a local SSE stub to test fallbacks
   # If you see a pretest error about better-sqlite3/ABI, run:
   pnpm approve-builds
   pnpm rebuild
+  ```
+
+## Validation Guide
+
+Follow this quick checklist to exercise core features end-to-end.
+
+- Env setup:
+  ```bash
+  cp -n .env.example .env || true   # if you keep one
+  # Ensure these are set in your .env
+  # AI_GATEWAY_BASE_URL= https://gateway.ai.vercel.ai/api/openai
+  # AI_GATEWAY_API_KEY=  <your-key>
+  ```
+
+- Basic infer + receipts:
+  ```bash
+  routepilot infer -p balanced-helpdesk -u alice --input "Hello world"
+  routepilot receipts --limit 1
+  ```
+
+- Chaos fallback (stall and 5xx):
+  ```bash
+  CHAOS_PRIMARY_STALL=1 routepilot infer -p balanced-helpdesk -u alice --input "Test stall"
+  CHAOS_HTTP_5XX=1     routepilot infer -p balanced-helpdesk -u alice --input "Test 5xx"
+  ```
+
+- Shadow route (no visible output; extra receipt):
+  ```bash
+  routepilot infer -p balanced-helpdesk -u alice --input "Shadow check" --shadow mistral/small
+  ```
+
+- Replay with judge scoring:
+  ```bash
+  routepilot replay -p balanced-helpdesk --text "One-liner about teamwork" --alts "anthropic/claude-3-haiku,mistral/small" --judge
+  ```
+
+- Agents (plan, run, dry-run):
+  ```bash
+  routepilot agents:plan --name helpdesk --text "Order 123 arrived damaged."
+  routepilot agents:run  --name helpdesk --text "Order 123 arrived damaged."
+  routepilot agents:run  --name helpdesk --text "Order 123 arrived damaged." --dry-run
+  ```
+
+- Tests & DB reset:
+  ```bash
+  pnpm test
+  pnpm test:integration
+  pnpm db:reset   # clears data/routepilot.db and mirrored receipts
   ```
 
 ## License
