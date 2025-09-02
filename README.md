@@ -292,6 +292,7 @@ Validation:
 - `gen` — optional: `system`, `temperature`, `top_p`, `stop`, `json_mode` (maps to OpenAI `response_format: {type: "json_object"}` when true).
 - `tenancy.per_user_daily_tokens`, `tenancy.per_user_rpm`, `tenancy.timezone` — quotas + clock.
 - Token accounting is placeholder for streaming; cost is estimated via rates. You can refine usage with a follow-up non-stream call if needed.
+  - `strategy.escalate_after_fallbacks` — print an escalation toast once fallbacks reach this count.
 
 ## Integration Patterns
 
