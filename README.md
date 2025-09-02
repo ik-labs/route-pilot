@@ -59,6 +59,8 @@ anthropic/claude-3-haiku: { input: 0.25, output: 1.25 }
 mistral/small:            { input: 0.10, output: 0.30 }
 ```
 
+Tip: copy `config/rates.example.yaml` to `config/rates.yaml` and edit to match your provider pricing.
+
 ## Database
 
 - SQLite file at `data/routepilot.db` (created automatically), WAL mode enabled.
