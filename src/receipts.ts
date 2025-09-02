@@ -93,10 +93,12 @@ export function timelineForTask(taskId: string) {
     }>;
   return rows.map((r) => {
     let agent: string | undefined;
+    let has_tools = false;
     try {
       if (r.payload_json) {
         const p = JSON.parse(r.payload_json);
         agent = p.agent;
+        if (p.meta && p.meta.tool_results) has_tools = true;
       }
     } catch {}
     let reasons: string[] | undefined;
@@ -113,6 +115,7 @@ export function timelineForTask(taskId: string) {
       reasons,
       cost_usd: r.cost_usd,
       parent_id: r.parent_id,
+      has_tools,
     };
   });
 }
@@ -150,7 +153,14 @@ export function timelineRowsRaw(taskId: string): TimelineRow[] {
     }>;
   return rows.map((r) => {
     let agent: string | undefined;
-    try { agent = r.payload_json ? JSON.parse(r.payload_json).agent : undefined; } catch {}
+    let has_tools = false;
+    try {
+      if (r.payload_json) {
+        const p = JSON.parse(r.payload_json);
+        agent = p.agent;
+        if (p.meta && p.meta.tool_results) has_tools = true;
+      }
+    } catch {}
     let reasons: string[] | undefined; try { reasons = r.reasons ? JSON.parse(r.reasons) : undefined; } catch {}
     return {
       id: r.id,
@@ -164,6 +174,7 @@ export function timelineRowsRaw(taskId: string): TimelineRow[] {
       reasons,
       cost_usd: r.cost_usd,
       parent_id: r.parent_id,
+      has_tools,
     } as any;
   });
 }

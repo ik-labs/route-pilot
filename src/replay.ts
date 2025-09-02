@@ -1,3 +1,4 @@
+import db from "./db.js";
 import { loadPolicy } from "./policy.js";
 import { runWithFallback } from "./router.js";
 import { estimateCost } from "./rates.js";
@@ -57,4 +58,69 @@ export async function replayPrompt(
   };
 
   return { policy: policy.policy, primary: basePrimary, results, suggestedPatch };
+}
+
+type ReceiptRow = {
+  id: string;
+  ts: string;
+  policy: string;
+  payload_json: string | null;
+};
+
+function loadReceiptWithPayload(id: string): ReceiptRow | null {
+  const row = db
+    .prepare(`SELECT id, ts, policy, payload_json FROM receipts WHERE id=?`)
+    .get(id) as ReceiptRow | undefined;
+  return row || null;
+}
+
+function listRecentReceiptsWithPayload(limit: number): ReceiptRow[] {
+  return db
+    .prepare(`SELECT id, ts, policy, payload_json FROM receipts ORDER BY ts DESC LIMIT ?`)
+    .all(limit) as ReceiptRow[];
+}
+
+function extractTextFromPayload(payload_json: string | null): string | null {
+  if (!payload_json) return null;
+  try {
+    const p = JSON.parse(payload_json);
+    // Prefer explicit snapshots when present
+    if (p?.meta?.input_snapshot) return String(p.meta.input_snapshot);
+    // No snapshot stored; cannot reconstruct exact prompt
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function replayFromReceipt(id: string, alts: string[], policyOverride?: string) {
+  const row = loadReceiptWithPayload(id);
+  if (!row) throw new Error(`No receipt ${id}`);
+  const text = extractTextFromPayload(row.payload_json);
+  if (!text) throw new Error(`Receipt ${id} has no input snapshot. Set ROUTEPILOT_SNAPSHOT_INPUT=1 before running to record snapshots.`);
+  const policyName = policyOverride || row.policy;
+  return replayPrompt(policyName, text, alts);
+}
+
+export async function replayLast(limit: number, alts: string[], policyOverride?: string) {
+  const rows = listRecentReceiptsWithPayload(limit);
+  const usable = rows
+    .map((r) => ({ r, text: extractTextFromPayload(r.payload_json) }))
+    .filter((x) => !!x.text) as Array<{ r: ReceiptRow; text: string }>;
+  if (!usable.length) throw new Error(`No receipts with input snapshots. Set ROUTEPILOT_SNAPSHOT_INPUT=1 before running to record snapshots.`);
+  const perPolicy = new Map<string, Array<{ id: string; text: string }>>();
+  for (const u of usable) {
+    const p = policyOverride || u.r.policy;
+    const arr = perPolicy.get(p) || [];
+    arr.push({ id: u.r.id, text: u.text });
+    perPolicy.set(p, arr);
+  }
+  const outputs: any[] = [];
+  for (const [policyName, items] of perPolicy.entries()) {
+    for (const item of items) {
+      const out = await replayPrompt(policyName, item.text, alts);
+      outputs.push({ receipt: item.id, ...out });
+    }
+  }
+  return { count: outputs.length, results: outputs };
 }

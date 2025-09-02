@@ -97,6 +97,7 @@ program
   .option("--limit <n>", "list last N", (v) => parseInt(v, 10), 10)
   .option("--timeline <taskId>", "show per-hop timeline for a taskId")
   .option("--tree", "render timeline as an ASCII tree", false)
+  .option("--tools", "only show hops that used tools", false)
   .option("--tasks", "list recent tasks (grouped by taskId)", false)
   .option("--json", "output JSON", false)
   .action((opts) => {
@@ -113,7 +114,8 @@ program
       if (opts.timeline) {
         if (opts.tree) {
           const { timelineRowsRaw } = require("./receipts.js");
-          const rows = timelineRowsRaw(opts.timeline);
+          let rows = timelineRowsRaw(opts.timeline);
+          if (opts.tools) rows = rows.filter((r: any) => !!r.has_tools);
           if (opts.json) { console.log(JSON.stringify(rows)); return; }
           if (!rows.length) { console.log(`No receipts found for taskId ${opts.timeline}`); return; }
           // Build adjacency by parent_id
@@ -131,7 +133,8 @@ program
             const lat = r.latency_ms != null ? `${r.latency_ms}ms` : "-";
             const first = r.first_token_ms != null ? `${r.first_token_ms}ms` : "-";
             const reasons = r.reasons && r.reasons.length ? ` [${r.reasons.join(",")}]` : "";
-            console.log(`${prefix}${branch} ${r.agent ?? "(agent?)"} -> ${route}  latency=${lat} first=${first} fallbacks=${r.fallbacks}${reasons}`);
+            const tools = r.has_tools ? " [tools]" : "";
+            console.log(`${prefix}${branch} ${r.agent ?? "(agent?)"} -> ${route}  latency=${lat} first=${first} fallbacks=${r.fallbacks}${reasons}${tools}`);
             const kids = byParent[r.id] || [];
             kids.forEach((k, idx) => printNode(k, nextPrefix, idx === kids.length - 1));
           };
@@ -140,7 +143,8 @@ program
           roots.forEach((r: any, idx: number) => printNode(r, "", idx === roots.length - 1));
           return;
         } else {
-          const rows = timelineForTask(opts.timeline);
+          let rows = timelineForTask(opts.timeline);
+          if (opts.tools) rows = rows.filter((r: any) => !!r.has_tools);
           if (opts.json) {
             console.log(JSON.stringify(rows));
             return;
@@ -157,7 +161,8 @@ program
             const first = r.first_token_ms != null ? `${r.first_token_ms}ms` : "-";
             const fall = `${r.fallbacks}`;
             const reasons = r.reasons && r.reasons.length ? ` [reasons: ${r.reasons.join(",")}]` : "";
-            console.log(`${head} ${agent} -> ${route}  latency=${lat} first=${first} fallbacks=${fall}${reasons}`);
+            const tools = r.has_tools ? " [tools]" : "";
+            console.log(`${head} ${agent} -> ${route}  latency=${lat} first=${first} fallbacks=${fall}${reasons}${tools}`);
           });
           return;
         }
@@ -185,29 +190,57 @@ program
 program
   .command("replay")
   .description("Run a prompt across alternate models and compare latency/cost")
-  .requiredOption("-p, --policy <name>")
-  .requiredOption("--text <input>")
+  .option("-p, --policy <name>")
+  .option("--text <input>")
   .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku,mistral/small'")
   .option("--json", "output JSON", false)
+  .option("--open <id>", "replay a specific receipt id (requires snapshots)")
+  .option("--last <n>", "replay the last N receipts with snapshots", (v) => parseInt(v, 10))
   .action(async (opts) => {
     try {
       const alts = (opts.alts ? String(opts.alts).split(/\s*,\s*/) : []).filter(Boolean);
-      const { replayPrompt } = await import("./replay.js");
-      const out = await replayPrompt(opts.policy, opts.text, alts);
+      const { replayPrompt, replayFromReceipt, replayLast } = await import("./replay.js");
+      let out: any;
+      if (opts.open) {
+        out = await replayFromReceipt(opts.open, alts, opts.policy);
+      } else if (opts.last) {
+        out = await replayLast(opts.last, alts, opts.policy);
+      } else {
+        if (!opts.policy || !opts.text) {
+          throw new Error("Provide --policy and --text, or use --open/--last with snapshots");
+        }
+        out = await replayPrompt(opts.policy, opts.text, alts);
+      }
       if (opts.json) {
         console.log(JSON.stringify(out));
         return;
       }
-      console.log(`Policy: ${out.policy}`);
-      console.log(`Primary: ${out.primary}`);
-      console.log("\nResults:");
-      out.results.forEach((r: any) => {
-        console.log(`- ${r.model}  latency=${r.latency_ms}ms  tokens=${r.prompt_tokens + r.completion_tokens}  cost=$${r.cost_usd}`);
-      });
-      console.log("\nSuggested patch (routing):");
-      console.log(`primary: [\"${out.primary}\"]`);
-      console.log(`backups: [${out.suggestedPatch.routing.backups.map((m: string) => `\"${m}\"`).join(", ")}]`);
-    } catch (e) {
+      if (opts.open || opts.last) {
+        if (out.results) {
+          console.log(`Replayed ${out.count} receipts with snapshots`);
+          out.results.forEach((res: any) => {
+            console.log(`
+Receipt ${res.receipt}
+Policy: ${res.policy}
+Primary: ${res.primary}
+Results:`);
+            res.results.forEach((r: any) => {
+              console.log(`- ${r.model}  latency=${r.latency_ms}ms  tokens=${r.prompt_tokens + r.completion_tokens}  cost=$${r.cost_usd}`);
+            });
+            console.log("Suggested routing backups:", res.suggestedPatch.routing.backups.join(", "));
+          });
+        } else {
+          console.log(`Policy: ${out.policy}`);
+          console.log(`Primary: ${out.primary}`);
+          console.log("\nResults:");
+          out.results.forEach((r: any) => {
+            console.log(`- ${r.model}  latency=${r.latency_ms}ms  tokens=${r.prompt_tokens + r.completion_tokens}  cost=$${r.cost_usd}`);
+          });
+          console.log("\nSuggested patch (routing):");
+          console.log(`primary: [\"${out.primary}\"]`);
+          console.log(`backups: [${out.suggestedPatch.routing.backups.map((m: string) => `\"${m}\"`).join(", ")}]`);
+        }
+      } catch (e) {
       const code = printFriendlyError(e);
       process.exitCode = code;
     }
@@ -249,17 +282,23 @@ program
 
 program
   .command("agents:replay")
-  .description("Replay a chain on alternate routes (stub)")
+  .description("Replay retriever steps on alternate models and compare")
   .requiredOption("--name <chain>")
   .option("--text <input>")
   .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku,mistral/small'")
   .action(async (opts) => {
     try {
       const alts = (opts.alts ? String(opts.alts).split(/\s*,\s*/) : []).filter(Boolean);
-      console.log("agents:replay is not implemented yet. It would:");
-      console.log(`- Run the '${opts.name}' plan${opts.text ? ` with input: ${opts.text}` : ''}`);
-      console.log("- Re-execute each hop against alternate models:", alts.length ? alts.join(", ") : "(none provided)");
-      console.log("- Compare latency/cost and produce a suggested policy patch.");
+      const { replayRetrievers } = await import("./subagents/run.js");
+      const out = await replayRetrievers(opts.name, { text: opts.text, alts });
+      // Print human summary
+      console.log(`Triage:`, JSON.stringify(out.triage));
+      for (const comp of out.comparisons) {
+        console.log(`\nAgent ${comp.agent}:`);
+        comp.results.forEach((r: any) => {
+          console.log(`- ${r.model}  latency=${r.latency_ms}ms  tokens=${r.prompt_tokens + r.completion_tokens}  cost=$${r.cost_usd}`);
+        });
+      }
     } catch (e) {
       const code = printFriendlyError(e);
       process.exitCode = code;

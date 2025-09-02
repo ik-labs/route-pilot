@@ -9,6 +9,7 @@ import db from "../db.js";
 import { estimateCost } from "../rates.js";
 import { safeLastJson } from "../util/json.js";
 import { validateAgainstSchema } from "./validate.js";
+import { httpFetch } from "./tools/http_fetch.js";
 import { sha256Hex } from "../util/hash.js";
 
 function uuid() { return crypto.randomUUID(); }
@@ -26,7 +27,39 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
       `Input schema validation failed for ${spec.name}: ${vin.errors.join('; ')}`
     );
   }
-  const userPayload = JSON.stringify({ input: env.input, context: env.context ?? {}, constraints: env.constraints ?? {} });
+  // Optional tool: http_fetch — run before LLM and attach results to payload
+  let tool_results: any = undefined;
+  try {
+    if (spec.tools?.includes("http_fetch")) {
+      const ids = (env as any).input?.ids as string[] | undefined;
+      const urlTemplate = (env.context as any)?.http_fetch?.url_template || process.env.HTTP_FETCH_URL_TEMPLATE;
+      if (ids && ids.length && typeof urlTemplate === 'string' && urlTemplate.includes('{id}')) {
+        const allowHosts = (process.env.HTTP_FETCH_ALLOWLIST || '').split(/\s*,\s*/).filter(Boolean);
+        const maxFetch = Math.min(ids.length, 3); // cap for safety
+        const fetched: any[] = [];
+        for (let i = 0; i < maxFetch; i++) {
+          const id = ids[i];
+          const url = urlTemplate.replaceAll('{id}', encodeURIComponent(id));
+          try {
+            const res = await httpFetch(url, { allowHosts });
+            let parsed: any = undefined;
+            if (res.body && (res.headers['content-type'] || '').startsWith('application/json')) {
+              try { parsed = JSON.parse(res.body); } catch {}
+            }
+            const body = res.body ? (res.body.length > 5000 ? (res.body.slice(0, 5000) + '\n...[truncated]') : res.body) : undefined;
+            fetched.push({ id, url, status: res.status, json: parsed, body });
+          } catch (e: any) {
+            fetched.push({ id, url, error: e?.message || String(e) });
+          }
+        }
+        tool_results = { http_fetch: fetched };
+      }
+    }
+  } catch {}
+
+  const userPayloadObj: any = { input: env.input, context: env.context ?? {}, constraints: env.constraints ?? {} };
+  if (tool_results) userPayloadObj.tool_results = tool_results;
+  const userPayload = JSON.stringify(userPayloadObj);
   const messages = [
     { role: "system", content: system },
     { role: "user", content: userPayload },
@@ -60,6 +93,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
   // TODO: real usage metering; use estimates for now
   const usage = { prompt: usagePrompt ?? 300, completion: usageCompletion ?? 200 };
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
+  const includeSnapshot = process.env.ROUTEPILOT_SNAPSHOT_INPUT === '1';
   const rid = writeReceipt({
     policy: policy.policy,
     route_primary: policy.routing.primary[0],
@@ -75,7 +109,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     // extra metadata (stored in payload_json for timeline rendering)
     // not indexed: safe to add without DB migrations
     ...(env.agent ? { agent: env.agent } : {}),
-    extras: env.receiptExtras,
+    extras: { ...(env.receiptExtras || {}), ...(includeSnapshot ? { input_snapshot: userPayload } : {}) },
   });
 
   // Record trace to support p95-based routing pre-pick for sub-agent models
@@ -201,6 +235,60 @@ export async function helpdeskParallelChain(text: string) {
   });
 
   return { taskId, draft: writer.output.draft, triage: triage.output, records: aggregated };
+}
+
+export async function helpdeskHttpChain(text: string) {
+  const taskId = uuid();
+  // 1) Triage
+  const triage = await runSubAgent<{ text: string }, { intent: string; fields?: string[] }>({
+    envelopeVersion: "1",
+    taskId,
+    agent: "TriageAgent",
+    policy: "balanced-helpdesk",
+    budget: { tokens: 800, costUsd: 0.002, timeMs: 1200 },
+    input: { text },
+  });
+
+  // 2) Retrieval with http_fetch context
+  let records: any = { records: [] };
+  if (triage.output?.fields?.length) {
+    const ids = triage.output.fields;
+    const urlTemplate = process.env.HTTP_FETCH_URL_TEMPLATE || "https://jsonplaceholder.typicode.com/posts/{id}";
+    const ret = await runSubAgent<{ ids: string[] }, { records: any[] }>({
+      envelopeVersion: "1",
+      taskId,
+      parentId: triage.receiptId,
+      agent: "RetrieverAgent",
+      policy: "cheap-fast",
+      budget: { tokens: 600, costUsd: 0.002, timeMs: 1000 },
+      input: { ids },
+      context: { http_fetch: { url_template: urlTemplate } },
+    });
+    records = ret.output;
+    // 3) Writer
+    const writer = await runSubAgent<{ context: any; tone: string }, { draft: string }>({
+      envelopeVersion: "1",
+      taskId,
+      parentId: ret.receiptId,
+      agent: "WriterAgent",
+      policy: "premium-brief",
+      budget: { tokens: 1200, costUsd: 0.006, timeMs: 1500 },
+      input: { context: { text, triage: triage.output, records }, tone: "friendly" },
+    });
+    return { taskId, draft: writer.output.draft, triage: triage.output, records };
+  }
+
+  const writer = await runSubAgent<{ context: any; tone: string }, { draft: string }>({
+    envelopeVersion: "1",
+    taskId,
+    parentId: triage.receiptId,
+    agent: "WriterAgent",
+    policy: "premium-brief",
+    budget: { tokens: 1200, costUsd: 0.006, timeMs: 1500 },
+    input: { context: { text, triage: triage.output, records }, tone: "friendly" },
+  });
+
+  return { taskId, draft: writer.output.draft, triage: triage.output, records };
 }
 
 // Helper: run multiple sub-agents in parallel with correct parent links

@@ -39,6 +39,9 @@ Create a `.env` at the repo root or in your project:
 - Optional:
   - `ROUTEPILOT_MIRROR_JSON=1` — also write pretty receipts to `data/receipts/<id>.json`.
   - `JWT_SECRET` — HMAC secret for signing receipt payloads (defaults to `dev-secret`).
+  - `ROUTEPILOT_SNAPSHOT_INPUT=1` — include input snapshots in receipt payloads (enables replay from receipts).
+  - `HTTP_FETCH_ALLOWLIST` — comma-separated allowlist for the `http_fetch` tool (e.g., `api.example.com,*.example.org`).
+  - `HTTP_FETCH_URL_TEMPLATE` — optional URL template for Retriever-like agents (e.g., `https://jsonplaceholder.typicode.com/posts/{id}`).
 
 Policies live under `policies/`. Starters:
 
@@ -94,9 +97,19 @@ mistral/small:            { input: 0.10, output: 0.30 }
   routepilot receipts --tasks --limit 10
   ```
 
-- Replay (stub):
+- Replay:
   ```bash
-  routepilot replay
+  # Ad-hoc text replay across models
+  routepilot replay -p balanced-helpdesk --text "Write a one-liner about teamwork" --alts "anthropic/claude-3-haiku,mistral/small"
+
+  # Replay a specific receipt (requires snapshots)
+  # First, record a receipt with an input snapshot
+  ROUTEPILOT_SNAPSHOT_INPUT=1 routepilot infer -p balanced-helpdesk -u alice --input "Draft a note..."
+  # Then replay
+  routepilot replay --open <receiptId> --alts "anthropic/claude-3-haiku,mistral/small"
+
+  # Replay the last N receipts with snapshots
+  routepilot replay --last 5 --alts "anthropic/claude-3-haiku,mistral/small"
   ```
 
 - Chaos toggles (for demos):
@@ -179,6 +192,15 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
   routepilot agents:run  --name helpdesk-par --text "Order 123 arrived damaged."
   ```
 
+- HTTP fetch variant (demo):
+  ```bash
+  # Allow the demo host and set a URL template substituting {id}
+  export HTTP_FETCH_ALLOWLIST=jsonplaceholder.typicode.com
+  export HTTP_FETCH_URL_TEMPLATE=https://jsonplaceholder.typicode.com/posts/{id}
+  routepilot agents:plan --name helpdesk-http --text "Order 1 and 2 arrived damaged."
+  routepilot agents:run  --name helpdesk-http --text "Order 1 and 2 arrived damaged."
+  ```
+
 - AggregatorAgent behavior:
   - Deterministic merge of branch outputs into `records`.
   - Dedupe by `id` when present; prefer most complete object; shallow merge.
@@ -203,6 +225,14 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
 
 Tip: `strategy.first_chunk_gate_ms` buffers initial output to avoid half-printed text during fallbacks. Fallback reasons include `stall`, `5xx`, `rate_limit`, etc.
 
+HTTP tool (optional):
+- When an agent declares `tools: [http_fetch]`, the controller can fetch small, allowlisted HTTP resources before the LLM call and pass results under `tool_results.http_fetch`.
+- Configure env:
+  - `HTTP_FETCH_ALLOWLIST=api.example.com,*.example.org`
+  - `HTTP_FETCH_URL_TEMPLATE=https://jsonplaceholder.typicode.com/posts/{id}`
+- In the helpdesk RetrieverAgent, if the input includes `ids: ["123", ...]`, it will GET the template per id (first 3 ids), parse JSON when content-type is JSON, and include a truncated body otherwise.
+- These results appear inside the sub-agent input JSON (and in the receipt snapshot when `ROUTEPILOT_SNAPSHOT_INPUT=1`).
+
 Validation:
 - Inputs to each sub-agent are validated against their `input_schema` (light JSON Schema subset). If invalid, the run fails fast with a clear error.
 - Outputs are validated against `output_schema` and warnings are printed to stderr on mismatch (non-fatal).
@@ -225,6 +255,7 @@ Validation:
 - `objectives.max_cost_usd` — budget hint (not enforced yet per request level).
 - `objectives.max_tokens` — upper bound for completion tokens.
 - `routing.primary` / `routing.backups` — model order; `routing.p95_window_n` — recent sample size for p95.
+  - `routing.params` — per-route overrides: `{ "model/name": { temperature, top_p, stop, json_mode } }`.
 - `strategy.stream` — stream responses; `strategy.retry_on` — informational; `strategy.fallback_on_latency_ms` — stall cutoff; `strategy.max_attempts` — cap attempts; `strategy.backoff_ms` — per-attempt backoff; `strategy.first_chunk_gate_ms` — buffer initial stream to allow clean fallbacks.
 - `gen` — optional: `system`, `temperature`, `top_p`, `stop`, `json_mode` (maps to OpenAI `response_format: {type: "json_object"}` when true).
 - `tenancy.per_user_daily_tokens`, `tenancy.per_user_rpm`, `tenancy.timezone` — quotas + clock.

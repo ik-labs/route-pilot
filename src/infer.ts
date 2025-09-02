@@ -66,6 +66,7 @@ export async function infer({
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
 
   const promptHash = sha256Hex(input + (attachmentBlock ? `\n\n${attachmentBlock}` : ""));
+  const includeSnapshot = process.env.ROUTEPILOT_SNAPSHOT_INPUT === '1';
   const rid = writeReceipt({
     policy: policy.policy,
     route_primary: policy.routing.primary[0],
@@ -77,6 +78,7 @@ export async function infer({
     usage: { ...usage, cost },
     mirrorJson,
     prompt_hash: promptHash,
+    extras: includeSnapshot ? { input_snapshot: input, attachments_snapshot: attachmentBlock } : undefined,
   });
 
   // Update quotas (daily tokens)
