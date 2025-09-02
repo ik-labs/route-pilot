@@ -6,6 +6,7 @@ export type ReceiptInput = {
   policy: string;
   route_primary: string;
   route_final: string;
+  model_path?: string;
   fallback_count: number;
   latency_ms: number;
   usage: { prompt: number; completion: number; cost: number };
@@ -26,8 +27,8 @@ export function writeReceipt(data: ReceiptInput) {
   const signature = sign(payload);
 
   db.prepare(
-    `INSERT INTO receipts(id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, prompt_hash, policy_hash, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO receipts(id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, prompt_hash, policy_hash, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json, model_path)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     id,
     ts,
@@ -46,7 +47,8 @@ export function writeReceipt(data: ReceiptInput) {
     data.usage.completion,
     data.usage.cost,
     signature,
-    JSON.stringify(payload)
+    JSON.stringify(payload),
+    data.model_path ?? data.route_final ?? null
   );
 
   if (process.env.ROUTEPILOT_MIRROR_JSON === "1" || data.mirrorJson) {

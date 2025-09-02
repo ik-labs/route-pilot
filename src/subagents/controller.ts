@@ -115,6 +115,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     policy: policy.policy,
     route_primary: policy.routing.primary[0],
     route_final: routeFinal,
+    model_path: routeFinal,
     fallback_count: fallbackCount,
     latency_ms: latency,
     usage: { prompt: usage.prompt, completion: usage.completion, cost },

@@ -146,6 +146,7 @@ export async function runAgent({
       policy: policy.policy,
       route_primary: policy.routing.primary[0],
       route_final: routeFinal,
+      model_path: routeFinal,
       fallback_count: fallbackCount,
       latency_ms: latency,
       first_token_ms: firstTokenMs ?? null,
