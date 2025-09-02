@@ -20,10 +20,17 @@ gen:
   top_p: 0.9
   stop: ["\n\nUser:"]
   json_mode: false
+routing:
+  primary: ["openai/gpt-4o-mini"]
+  backups: ["anthropic/claude-3-haiku", "mistral/small"]
+  p95_window_n: 100
+  params:
+    "openai/gpt-4o-mini": { temperature: 0.2 }
+    "anthropic/claude-3-haiku": { temperature: 0.1, top_p: 0.95 }
+    "mistral/small": { temperature: 0.3, stop: ["\n\nUser:"] }
 tenancy:
   per_user_daily_tokens: 40000
   per_user_rpm: 60
   timezone: "UTC"
 quality:
   judge: null
-

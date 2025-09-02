@@ -263,6 +263,17 @@ Validation:
 - `objectives.max_tokens` — upper bound for completion tokens.
 - `routing.primary` / `routing.backups` — model order; `routing.p95_window_n` — recent sample size for p95.
   - `routing.params` — per-route overrides: `{ "model/name": { temperature, top_p, stop, json_mode } }`.
+    Example:
+    ```yaml
+    routing:
+      primary: ["openai/gpt-4o-mini"]
+      backups: ["anthropic/claude-3-haiku", "mistral/small"]
+      p95_window_n: 100
+      params:
+        "openai/gpt-4o-mini": { temperature: 0.2 }
+        "anthropic/claude-3-haiku": { temperature: 0.1, top_p: 0.95 }
+        "mistral/small": { temperature: 0.3, stop: ["\n\nUser:"] }
+    ```
 - `strategy.stream` — stream responses; `strategy.retry_on` — informational; `strategy.fallback_on_latency_ms` — stall cutoff; `strategy.max_attempts` — cap attempts; `strategy.backoff_ms` — per-attempt backoff; `strategy.first_chunk_gate_ms` — buffer initial stream to allow clean fallbacks.
 - `gen` — optional: `system`, `temperature`, `top_p`, `stop`, `json_mode` (maps to OpenAI `response_format: {type: "json_object"}` when true).
 - `tenancy.per_user_daily_tokens`, `tenancy.per_user_rpm`, `tenancy.timezone` — quotas + clock.
@@ -305,6 +316,14 @@ Validation:
 - Minimal sanity tests:
   ```bash
   pnpm tsx scripts/sanity.ts
+  ```
+
+- Quick test suite with preflight (rebuild hint if needed):
+  ```bash
+  pnpm test
+  # If you see a pretest error about better-sqlite3/ABI, run:
+  pnpm approve-builds
+  pnpm rebuild
   ```
 
 ## License
