@@ -92,6 +92,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     policy.strategy.max_attempts,
     policy.strategy.backoff_ms,
     policy.strategy.first_chunk_gate_ms,
+    policy.strategy.escalate_after_fallbacks,
     { ...(policy.gen || {}), json_mode: true },
     policy.routing.params ?? undefined,
     handler,

@@ -19,6 +19,7 @@ export async function runWithFallback(
   maxAttempts: number,
   backoffMs: number[],
   firstChunkGateMs: number,
+  escalateAfter: number,
   gen?: { temperature?: number; top_p?: number; stop?: string[]; json_mode?: boolean },
   routeParams?: Record<string, RouteParams>,
   streamHandler?: (res: Response, onFirstChunk: () => void) => Promise<void>,
@@ -131,9 +132,7 @@ export async function runWithFallback(
       }
       // Optional escalation toast after repeated fallbacks per policy
       if (debug && fallbackCount >= (Array.isArray(backoffMs) ? 0 : 0)) {}
-      const escalateAfterEnv = parseInt(process.env.ROUTEPILOT_ESCALATE_AFTER || '0', 10);
-      const escalateAfter = Number.isFinite(escalateAfterEnv) ? escalateAfterEnv : 0;
-      const threshold = escalateAfter;
+      const threshold = Number.isFinite(escalateAfter) ? escalateAfter : 0;
       if (threshold > 0 && fallbackCount >= threshold && process.stderr.isTTY) {
         const Rr = "\x1b[31m"; const R0 = "\x1b[0m";
         process.stderr.write(`${Rr}[escalate] fallbacks=${fallbackCount} threshold=${threshold}${R0}\n`);

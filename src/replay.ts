@@ -35,6 +35,7 @@ export async function replayPrompt(
       1,                     // attempts: measure the target model only
       [0],                   // no backoff needed
       policy.strategy.first_chunk_gate_ms,
+      policy.strategy.escalate_after_fallbacks,
       policy.gen ?? undefined,
       policy.routing.params ?? undefined,
       async (res, onFirst) => { await streamSSEToVoid(res, onFirst); },

@@ -66,6 +66,7 @@ async function evaluateAgentOnModel(
     1,
     [0],
     policy.strategy.first_chunk_gate_ms,
+    policy.strategy.escalate_after_fallbacks,
     { ...(policy.gen || {}), json_mode: true },
     async (res, onFirst) => { await streamSSEToVoid(res, onFirst); },
     false
