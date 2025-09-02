@@ -91,30 +91,61 @@ program
   .option("--open <id>")
   .option("--limit <n>", "list last N", (v) => parseInt(v, 10), 10)
   .option("--timeline <taskId>", "show per-hop timeline for a taskId")
+  .option("--tree", "render timeline as an ASCII tree", false)
   .option("--json", "output JSON", false)
   .action((opts) => {
     try {
       if (opts.timeline) {
-        const rows = timelineForTask(opts.timeline);
-        if (opts.json) {
-          console.log(JSON.stringify(rows));
+        if (opts.tree) {
+          const { timelineRowsRaw } = require("./receipts.js");
+          const rows = timelineRowsRaw(opts.timeline);
+          if (opts.json) { console.log(JSON.stringify(rows)); return; }
+          if (!rows.length) { console.log(`No receipts found for taskId ${opts.timeline}`); return; }
+          // Build adjacency by parent_id
+          const byParent: Record<string, any[]> = {};
+          const rootKey = `ROOT:${opts.timeline}`;
+          for (const r of rows) {
+            const key = r.parent_id || rootKey;
+            byParent[key] = byParent[key] || [];
+            byParent[key].push(r);
+          }
+          const printNode = (r: any, prefix: string, isLast: boolean) => {
+            const branch = isLast ? "└─" : "├─";
+            const nextPrefix = prefix + (isLast ? "  " : "│ ");
+            const route = r.route ?? "?";
+            const lat = r.latency_ms != null ? `${r.latency_ms}ms` : "-";
+            const first = r.first_token_ms != null ? `${r.first_token_ms}ms` : "-";
+            const reasons = r.reasons && r.reasons.length ? ` [${r.reasons.join(",")}]` : "";
+            console.log(`${prefix}${branch} ${r.agent ?? "(agent?)"} -> ${route}  latency=${lat} first=${first} fallbacks=${r.fallbacks}${reasons}`);
+            const kids = byParent[r.id] || [];
+            kids.forEach((k, idx) => printNode(k, nextPrefix, idx === kids.length - 1));
+          };
+          console.log(`Task ${opts.timeline}`);
+          const roots = (byParent[rootKey] || []).concat((byParent[null] || []));
+          roots.forEach((r: any, idx: number) => printNode(r, "", idx === roots.length - 1));
+          return;
+        } else {
+          const rows = timelineForTask(opts.timeline);
+          if (opts.json) {
+            console.log(JSON.stringify(rows));
+            return;
+          }
+          if (!rows.length) {
+            console.log(`No receipts found for taskId ${opts.timeline}`);
+            return;
+          }
+          rows.forEach((r: any, i: number) => {
+            const head = `#${i + 1}`.padEnd(4);
+            const agent = (r.agent ?? "").padEnd(14);
+            const route = r.route ?? "?";
+            const lat = `${r.latency_ms ?? "-"}ms`;
+            const first = r.first_token_ms != null ? `${r.first_token_ms}ms` : "-";
+            const fall = `${r.fallbacks}`;
+            const reasons = r.reasons && r.reasons.length ? ` [reasons: ${r.reasons.join(",")}]` : "";
+            console.log(`${head} ${agent} -> ${route}  latency=${lat} first=${first} fallbacks=${fall}${reasons}`);
+          });
           return;
         }
-        if (!rows.length) {
-          console.log(`No receipts found for taskId ${opts.timeline}`);
-          return;
-        }
-        rows.forEach((r: any, i: number) => {
-          const head = `#${i + 1}`.padEnd(4);
-          const agent = (r.agent ?? "").padEnd(14);
-          const route = r.route ?? "?";
-          const lat = `${r.latency_ms ?? "-"}ms`;
-          const first = r.first_token_ms != null ? `${r.first_token_ms}ms` : "-";
-          const fall = `${r.fallbacks}`;
-          const reasons = r.reasons && r.reasons.length ? ` [reasons: ${r.reasons.join(",")}]` : "";
-          console.log(`${head} ${agent} -> ${route}  latency=${lat} first=${first} fallbacks=${fall}${reasons}`);
-        });
-        return;
       }
       if (opts.open) {
         const r = getReceipt(opts.open);
@@ -171,6 +202,25 @@ program
       const res = await runChain(opts.name, { text: opts.text });
       if (opts.json) console.log(JSON.stringify(res));
       else console.error(`\n[chain ${opts.name}] done task=${res.taskId}`);
+    } catch (e) {
+      const code = printFriendlyError(e);
+      process.exitCode = code;
+    }
+  });
+
+program
+  .command("agents:replay")
+  .description("Replay a chain on alternate routes (stub)")
+  .requiredOption("--name <chain>")
+  .option("--text <input>")
+  .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku,mistral/small'")
+  .action(async (opts) => {
+    try {
+      const alts = (opts.alts ? String(opts.alts).split(/\s*,\s*/) : []).filter(Boolean);
+      console.log("agents:replay is not implemented yet. It would:");
+      console.log(`- Run the '${opts.name}' plan${opts.text ? ` with input: ${opts.text}` : ''}`);
+      console.log("- Re-execute each hop against alternate models:", alts.length ? alts.join(", ") : "(none provided)");
+      console.log("- Compare latency/cost and produce a suggested policy patch.");
     } catch (e) {
       const code = printFriendlyError(e);
       process.exitCode = code;

@@ -88,6 +88,8 @@ mistral/small:            { input: 0.10, output: 0.30 }
   routepilot receipts --open <id> --json
   # Per-task timeline (for sub-agent chains)
   routepilot receipts --timeline <taskId>
+  # With ASCII tree
+  routepilot receipts --timeline <taskId> --tree
   ```
 
 - Replay (stub):
@@ -167,6 +169,11 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
   ```bash
   routepilot agents:run --name helpdesk --text "Order 123 arrived damaged."
   # Add --json to print a final JSON summary
+  ```
+
+- Replay a chain (stub):
+  ```bash
+  routepilot agents:replay --name helpdesk --text "Order 123 arrived damaged." --alts "anthropic/claude-3-haiku,mistral/small"
   ```
 
 - Inspect receipts (now include first_token_ms and fallback reasons):
