@@ -61,6 +61,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     // extra metadata (stored in payload_json for timeline rendering)
     // not indexed: safe to add without DB migrations
     ...(env.agent ? { agent: env.agent } : {}),
+    extras: env.receiptExtras,
   });
 
   const json = safeLastJson(captured) as O;
@@ -118,4 +119,102 @@ export async function helpdeskChain(text: string) {
   });
 
   return { taskId, draft: writer.output.draft, triage: triage.output, records };
+}
+
+export async function helpdeskParallelChain(text: string) {
+  const taskId = uuid();
+  // 1) Triage
+  const triage = await runSubAgent<{ text: string }, { intent: string; fields?: string[] }>({
+    envelopeVersion: "1",
+    taskId,
+    agent: "TriageAgent",
+    policy: "balanced-helpdesk",
+    budget: { tokens: 800, costUsd: 0.002, timeMs: 1200 },
+    input: { text },
+  });
+
+  let aggregated: any = { records: [] };
+  if (triage.output?.fields?.length) {
+    const ids = triage.output.fields;
+    // 2) Fan-out: Fast + Accurate retrievers
+    const branches = await runFanOut(taskId, triage.receiptId!, [
+      { agent: "RetrieverFast",     input: { ids }, budget: { tokens: 500, costUsd: 0.0015, timeMs: 900 } },
+      { agent: "RetrieverAccurate", input: { ids }, budget: { tokens: 600, costUsd: 0.0020, timeMs: 1200 } },
+    ]);
+    // 3) Aggregator
+    const agg = await reduceFanOut(
+      taskId,
+      triage.receiptId!,
+      "AggregatorAgent",
+      branches.map((b) => ({ receiptId: b.receiptId!, output: b.output })),
+      { tokens: 600, costUsd: 0.002, timeMs: 900 },
+      { ids }
+    );
+    aggregated = agg.output;
+  }
+
+  // 4) Writer
+  const writer = await runSubAgent<{ context: any; tone: string }, { draft: string }>({
+    envelopeVersion: "1",
+    taskId,
+    parentId: triage.receiptId,
+    agent: "WriterAgent",
+    policy: "premium-brief",
+    budget: { tokens: 1200, costUsd: 0.006, timeMs: 1500 },
+    input: { context: { text, triage: triage.output, records: aggregated }, tone: "friendly" },
+  });
+
+  return { taskId, draft: writer.output.draft, triage: triage.output, records: aggregated };
+}
+
+// Helper: run multiple sub-agents in parallel with correct parent links
+export async function runFanOut(
+  taskId: string,
+  parentReceiptId: string,
+  branches: Array<{
+    agent: string;
+    input: any;
+    budget: { tokens: number; costUsd: number; timeMs: number };
+    context?: Record<string, any>;
+    constraints?: Record<string, any>;
+  }>
+) {
+  const results = await Promise.all(
+    branches.map((b) =>
+      runSubAgent({
+        envelopeVersion: "1",
+        taskId,
+        parentId: parentReceiptId,
+        agent: b.agent,
+        policy: "", // resolved by registry in runSubAgent
+        budget: b.budget,
+        input: b.input,
+        context: b.context,
+        constraints: b.constraints,
+      })
+    )
+  );
+  return results;
+}
+
+// Helper: reduce fan-out outputs with an aggregator agent
+export async function reduceFanOut(
+  taskId: string,
+  parentReceiptId: string,
+  aggregatorAgent: string,
+  branches: Array<{ receiptId: string; output: any }>,
+  budget: { tokens: number; costUsd: number; timeMs: number },
+  context: Record<string, any> = {}
+) {
+  const agg = await runSubAgent({
+    envelopeVersion: "1",
+    taskId,
+    parentId: parentReceiptId,
+    agent: aggregatorAgent,
+    policy: "",
+    budget,
+    input: { branches: branches.map((b) => b.output), context },
+    receiptExtras: { children_receipts: branches.map((b) => b.receiptId) },
+  });
+  return agg;
 }

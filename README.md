@@ -173,6 +173,17 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
   # Add --json to print a final JSON summary
   ```
 
+- Parallel variant (fan-out + reduce):
+  ```bash
+  routepilot agents:plan --name helpdesk-par --text "Order 123 arrived damaged." --json
+  routepilot agents:run  --name helpdesk-par --text "Order 123 arrived damaged."
+  ```
+
+- Parallel fan-out (library helpers for future chains):
+  - `runFanOut(taskId, parentReceiptId, branches[])` — runs branches in parallel; each child gets `parent_id = parentReceiptId`.
+  - `reduceFanOut(taskId, parentReceiptId, aggregatorAgent, branches, budget, context)` — runs a reducer with `parent_id = parentReceiptId` and includes `children_receipts` in receipt payload meta.
+  - Timeline `--tree` will show branches under the parent node; reducer appears as a sibling under the same parent.
+
 - Replay a chain (stub):
   ```bash
   routepilot agents:replay --name helpdesk --text "Order 123 arrived damaged." --alts "anthropic/claude-3-haiku,mistral/small"

@@ -14,12 +14,13 @@ export type ReceiptInput = {
   parent_id?: string;
   first_token_ms?: number | null;
   reasons?: string[];
+  extras?: Record<string, any>;
 };
 
 export function writeReceipt(data: ReceiptInput) {
   const id = crypto.randomUUID();
   const ts = new Date().toISOString();
-  const payload = { id, ts, ...data };
+  const payload = { id, ts, ...data, ...(data.extras ? { meta: data.extras } : {}) };
   const signature = sign(payload);
 
   db.prepare(

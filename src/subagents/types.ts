@@ -26,5 +26,5 @@ export type TaskEnvelope<I = any, O = any> = {
   input: I;
   context?: Record<string, any>;
   constraints?: Record<string, any>;
+  receiptExtras?: Record<string, any>;
 };
-

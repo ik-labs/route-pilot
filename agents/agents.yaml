@@ -20,3 +20,24 @@ agents:
     policy: premium-brief
     tools: []
 
+  # Variants for parallel fan-out demo
+  - name: RetrieverFast
+    description: fast but possibly noisy retrieval of records
+    input_schema: { type: object, properties: { ids: {type: array, items: {type: string}} }, required: [ids] }
+    output_schema: { type: object, properties: { records: {type: array, items: {type: object}} }, required: [records] }
+    policy: cheap-fast
+    tools: [http_fetch]
+
+  - name: RetrieverAccurate
+    description: slower but more accurate retrieval of records
+    input_schema: { type: object, properties: { ids: {type: array, items: {type: string}} }, required: [ids] }
+    output_schema: { type: object, properties: { records: {type: array, items: {type: object}} }, required: [records] }
+    policy: balanced-helpdesk
+    tools: [http_fetch]
+
+  - name: AggregatorAgent
+    description: merge or reconcile results from parallel branches
+    input_schema: { type: object, properties: { branches: {type: array, items: {type: object}}, context: {type: object} }, required: [branches] }
+    output_schema: { type: object, properties: { records: {type: array, items: {type: object}} }, required: [records] }
+    policy: cheap-fast
+    tools: []
