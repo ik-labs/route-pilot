@@ -179,9 +179,33 @@ program
 
 program
   .command("replay")
-  .description("Re-run prompts on alternate routes to compare (stub)")
-  .action(() => {
-    console.log("replay: not implemented (TODO)");
+  .description("Run a prompt across alternate models and compare latency/cost")
+  .requiredOption("-p, --policy <name>")
+  .requiredOption("--text <input>")
+  .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku,mistral/small'")
+  .option("--json", "output JSON", false)
+  .action(async (opts) => {
+    try {
+      const alts = (opts.alts ? String(opts.alts).split(/\s*,\s*/) : []).filter(Boolean);
+      const { replayPrompt } = await import("./replay.js");
+      const out = await replayPrompt(opts.policy, opts.text, alts);
+      if (opts.json) {
+        console.log(JSON.stringify(out));
+        return;
+      }
+      console.log(`Policy: ${out.policy}`);
+      console.log(`Primary: ${out.primary}`);
+      console.log("\nResults:");
+      out.results.forEach((r: any) => {
+        console.log(`- ${r.model}  latency=${r.latency_ms}ms  tokens=${r.prompt_tokens + r.completion_tokens}  cost=$${r.cost_usd}`);
+      });
+      console.log("\nSuggested patch (routing):");
+      console.log(`primary: [\"${out.primary}\"]`);
+      console.log(`backups: [${out.suggestedPatch.routing.backups.map((m: string) => `\"${m}\"`).join(", ")}]`);
+    } catch (e) {
+      const code = printFriendlyError(e);
+      process.exitCode = code;
+    }
   });
 
 program

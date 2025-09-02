@@ -7,6 +7,7 @@ import { estimateCost } from "./rates.js";
 import { runWithFallback } from "./router.js";
 import { streamSSEToBufferAndStdout } from "./util/stream.js";
 import { buildAttachmentMessage, AttachOpts } from "./util/files.js";
+import { sha256Hex } from "./util/hash.js";
 
 function uuid() { return crypto.randomUUID(); }
 
@@ -90,7 +91,7 @@ export async function runAgent({
   };
 
   const start = Date.now();
-  const { routeFinal, fallbackCount, latency } = await runWithFallback(
+  const { routeFinal, fallbackCount, latency, usagePrompt, usageCompletion } = await runWithFallback(
     { primary: policy.routing.primary, backups: policy.routing.backups },
     policy.objectives.p95_latency_ms,
     policy.routing.p95_window_n,
@@ -107,7 +108,7 @@ export async function runAgent({
 
   addMessage(sessionId!, "assistant", captured);
 
-  const usage = { prompt: 300, completion: 200 };
+  const usage = { prompt: usagePrompt ?? 300, completion: usageCompletion ?? 200 };
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
   addDailyTokens(
     userRef,

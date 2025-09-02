@@ -10,6 +10,7 @@ export type ReceiptInput = {
   latency_ms: number;
   usage: { prompt: number; completion: number; cost: number };
   mirrorJson?: boolean;
+  prompt_hash?: string;
   task_id?: string;
   parent_id?: string;
   first_token_ms?: number | null;
@@ -24,8 +25,8 @@ export function writeReceipt(data: ReceiptInput) {
   const signature = sign(payload);
 
   db.prepare(
-    `INSERT INTO receipts(id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO receipts(id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, prompt_hash, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     id,
     ts,
@@ -35,6 +36,7 @@ export function writeReceipt(data: ReceiptInput) {
     data.fallback_count,
     data.latency_ms,
     data.first_token_ms ?? null,
+    data.prompt_hash ?? null,
     data.task_id ?? null,
     data.parent_id ?? null,
     data.reasons ? JSON.stringify(data.reasons) : null,
@@ -63,7 +65,7 @@ function sign(obj: any) {
 export function getReceipt(id: string) {
   return db
     .prepare(
-      `SELECT id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json
+      `SELECT id, ts, policy, route_primary, route_final, fallback_count, latency_ms, first_token_ms, prompt_hash, task_id, parent_id, reasons, prompt_tokens, completion_tokens, cost_usd, signature, payload_json
        FROM receipts WHERE id=?`
     )
     .get(id);

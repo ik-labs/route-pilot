@@ -130,6 +130,43 @@ export async function streamSSEToBufferAndStdout(
   return captured;
 }
 
+// Consume SSE stream, trigger onFirstChunk, but do not write to stdout or buffer output.
+export async function streamSSEToVoid(
+  res: Response,
+  onFirstChunk: () => void
+) {
+  if (!res.body) throw new Error("No body");
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let gotFirst = false;
+  let buffer = "";
+  let doneFlag = false;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      const event = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const lines = event.split(/\r?\n/);
+      for (const line of lines) {
+        const m = /^data:\s*(.*)$/.exec(line);
+        if (!m) continue;
+        const data = m[1];
+        if (data === "[DONE]") { doneFlag = true; break; }
+        try {
+          const obj = JSON.parse(data);
+          const delta = obj?.choices?.[0]?.delta?.content ?? obj?.choices?.[0]?.text ?? "";
+          if (delta && !gotFirst) { gotFirst = true; onFirstChunk(); }
+        } catch { /* ignore */ }
+      }
+      if (doneFlag) break;
+    }
+    if (doneFlag) break;
+  }
+}
+
 // Same as above, but holds initial output for a short gate window.
 // If the provided shouldAbort() returns true during the gate, the buffer is dropped (nothing printed).
 export async function streamSSEToBufferAndStdoutWithGate(

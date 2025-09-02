@@ -2,6 +2,7 @@ import { callGateway, ChatParams } from "./gateway.js";
 import { streamSSEToStdout, streamSSEToBufferAndStdoutWithGate } from "./util/stream.js";
 import { GatewayError, RouterError } from "./util/errors.js";
 import { fastestByRecentP95, p95LatencyFor } from "./db.js";
+import { parseUsageFromHeaders } from "./util/usage.js";
 
 type RoutePlan = { primary: string[]; backups: string[] };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -38,6 +39,8 @@ export async function runWithFallback(
   const attemptErrors: Array<{ model: string; message: string; status?: number }> = [];
 
   let attempts = 0;
+  let usagePrompt: number | undefined;
+  let usageCompletion: number | undefined;
   for (let i = 0; i < tries.length; i++) {
     const model = tries[i];
     if (attempts >= maxAttempts) break;
@@ -89,6 +92,14 @@ export async function runWithFallback(
 
       clearTimeout(firstChunkTimer);
       clearTimeout(stallTimer);
+      // Attempt to parse usage from headers after successful stream
+      try {
+        const u = parseUsageFromHeaders(res.headers);
+        if (u) {
+          if (u.prompt != null) usagePrompt = u.prompt;
+          if (u.completion != null) usageCompletion = u.completion;
+        }
+      } catch {}
       routeFinal = model;
       break; // success
     } catch (e: any) {
@@ -120,5 +131,5 @@ export async function runWithFallback(
   const latency = Date.now() - start;
   if (!routeFinal) throw new RouterError(`All routes failed after ${tries.length} attempts`, attemptErrors);
 
-  return { routeFinal, fallbackCount, latency, firstTokenMs, reasons };
+  return { routeFinal, fallbackCount, latency, firstTokenMs, reasons, usagePrompt, usageCompletion };
 }

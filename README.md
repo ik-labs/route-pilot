@@ -196,7 +196,7 @@ RoutePilot can orchestrate small sub-agents (skills) per policy and budget. A sa
   routepilot agents:replay --name helpdesk --text "Order 123 arrived damaged." --alts "anthropic/claude-3-haiku,mistral/small"
   ```
 
-- Inspect receipts (now include first_token_ms and fallback reasons):
+- Inspect receipts (now include first_token_ms, fallback reasons, and prompt_hash):
   ```bash
   routepilot receipts --limit 5 --json
   ```

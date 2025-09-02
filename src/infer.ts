@@ -5,6 +5,7 @@ import { addDailyTokens, assertWithinRpm } from "./quotas.js";
 import db from "./db.js";
 import { estimateCost } from "./rates.js";
 import { buildAttachmentMessage, AttachOpts } from "./util/files.js";
+import { sha256Hex } from "./util/hash.js";
 
 export async function infer({
   policyName,
@@ -31,8 +32,9 @@ export async function infer({
   assertWithinRpm(userRef, policy.tenancy.per_user_rpm);
 
   const messages = [{ role: "user", content: input }];
+  let attachmentBlock: string | undefined;
   if (attach && attach.length) {
-    const attachmentBlock = await buildAttachmentMessage(attach, attachOpts ?? {});
+    attachmentBlock = await buildAttachmentMessage(attach, attachOpts ?? {});
     messages.push({ role: "user", content: attachmentBlock });
   }
   // Optional system prompt
@@ -40,7 +42,7 @@ export async function infer({
     messages.unshift({ role: "system", content: policy.gen.system });
   }
   const start = Date.now();
-  const { routeFinal, fallbackCount, latency, firstTokenMs, reasons } = await runWithFallback(
+  const { routeFinal, fallbackCount, latency, firstTokenMs, reasons, usagePrompt, usageCompletion } = await runWithFallback(
     { primary: policy.routing.primary, backups: policy.routing.backups },
     policy.objectives.p95_latency_ms,
     policy.routing.p95_window_n,
@@ -55,10 +57,14 @@ export async function infer({
     !!debug
   );
 
-  // Placeholder usage estimate (improve later using real usage)
-  const usage = { prompt: 300, completion: 200 };
+  // Real usage from headers when available; fallback to estimate
+  const usage = {
+    prompt: usagePrompt ?? 300,
+    completion: usageCompletion ?? 200,
+  };
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
 
+  const promptHash = sha256Hex(input + (attachmentBlock ? `\n\n${attachmentBlock}` : ""));
   const rid = writeReceipt({
     policy: policy.policy,
     route_primary: policy.routing.primary[0],
@@ -69,6 +75,7 @@ export async function infer({
     reasons,
     usage: { ...usage, cost },
     mirrorJson,
+    prompt_hash: promptHash,
   });
 
   // Update quotas (daily tokens)

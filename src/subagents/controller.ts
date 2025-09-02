@@ -9,6 +9,7 @@ import db from "../db.js";
 import { estimateCost } from "../rates.js";
 import { safeLastJson } from "../util/json.js";
 import { validateAgainstSchema } from "./validate.js";
+import { sha256Hex } from "../util/hash.js";
 
 function uuid() { return crypto.randomUUID(); }
 
@@ -25,9 +26,10 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
       `Input schema validation failed for ${spec.name}: ${vin.errors.join('; ')}`
     );
   }
+  const userPayload = JSON.stringify({ input: env.input, context: env.context ?? {}, constraints: env.constraints ?? {} });
   const messages = [
     { role: "system", content: system },
-    { role: "user", content: JSON.stringify({ input: env.input, context: env.context ?? {}, constraints: env.constraints ?? {} }) },
+    { role: "user", content: userPayload },
   ];
 
   let captured = "";
@@ -39,7 +41,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     process.stderr.write(`\n=== ${env.agent} (policy=${spec.policy}) ===\n`);
   }
 
-  const { routeFinal, fallbackCount, latency, firstTokenMs, reasons } = await runWithFallback(
+  const { routeFinal, fallbackCount, latency, firstTokenMs, reasons, usagePrompt, usageCompletion } = await runWithFallback(
     { primary: policy.routing.primary, backups: policy.routing.backups },
     policy.objectives.p95_latency_ms,
     policy.routing.p95_window_n,
@@ -55,7 +57,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
   );
 
   // TODO: real usage metering; use estimates for now
-  const usage = { prompt: 300, completion: 200 };
+  const usage = { prompt: usagePrompt ?? 300, completion: usageCompletion ?? 200 };
   const cost = estimateCost(routeFinal, usage.prompt, usage.completion);
   const rid = writeReceipt({
     policy: policy.policy,
@@ -68,6 +70,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     parent_id: env.parentId,
     first_token_ms: firstTokenMs ?? null,
     reasons,
+    prompt_hash: sha256Hex(userPayload),
     // extra metadata (stored in payload_json for timeline rendering)
     // not indexed: safe to add without DB migrations
     ...(env.agent ? { agent: env.agent } : {}),
