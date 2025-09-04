@@ -35,7 +35,7 @@ export async function infer({
   // RPM pre-check
   assertWithinRpm(userRef, policy.tenancy.per_user_rpm);
 
-  const messages = [{ role: "user", content: input }];
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [{ role: "user", content: input }];
   let attachmentBlock: string | undefined;
   if (attach && attach.length) {
     attachmentBlock = await buildAttachmentMessage(attach, attachOpts ?? {});
@@ -59,6 +59,7 @@ export async function infer({
     policy.strategy.escalate_after_fallbacks,
     policy.gen ?? undefined,
     policy.routing.params ?? undefined,
+    undefined,
     undefined,
     !!debug
   );
@@ -158,6 +159,7 @@ export async function infer({
         merged,
         undefined,
         async (res, onFirst) => { const { streamSSEToVoid } = await import('./util/stream.js'); await streamSSEToVoid(res, onFirst); },
+        undefined,
         false
       );
       // Write a shadow marker receipt with minimal payload

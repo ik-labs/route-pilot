@@ -96,6 +96,7 @@ export async function runSubAgent<I, O>(env: TaskEnvelope<I, O>) {
     { ...(policy.gen || {}), json_mode: true },
     policy.routing.params ?? undefined,
     handler,
+    undefined,
     false
   );
 
@@ -245,7 +246,7 @@ export async function helpdeskParallelChain(text: string, opts?: { earlyStop?: b
       taskId,
       triage.receiptId!,
       "AggregatorAgent",
-      branches.map((b) => ({ receiptId: b.receiptId!, output: b.output })),
+      branches.map((b: { receiptId?: string; output: any }) => ({ receiptId: b.receiptId!, output: b.output })),
       { tokens: 600, costUsd: 0.002, timeMs: 900 },
       { ids },
       fan.cancelledAgents

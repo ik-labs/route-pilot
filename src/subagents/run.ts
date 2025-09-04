@@ -68,7 +68,9 @@ async function evaluateAgentOnModel(
     policy.strategy.first_chunk_gate_ms,
     policy.strategy.escalate_after_fallbacks,
     { ...(policy.gen || {}), json_mode: true },
+    policy.routing.params ?? undefined,
     async (res, onFirst) => { await streamSSEToVoid(res, onFirst); },
+    undefined,
     false
   );
   const prompt = usagePrompt ?? 300;

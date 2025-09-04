@@ -111,6 +111,7 @@ export async function runAgent({
     policy.gen ?? undefined,
     policy.routing.params ?? undefined,
     handler,
+    undefined,
     !!debug
   );
 
@@ -154,7 +155,7 @@ export async function runAgent({
       reasons,
       usage: { prompt: usage.prompt, completion: usage.completion, cost: estimateCost(routeFinal, usage.prompt, usage.completion) },
       task_id: sessionId!,
-      parent_id: last?.id ?? null,
+      parent_id: last?.id || undefined,
       prompt_hash: sha256Hex(input + (attachmentBlock ? `\n\n${attachmentBlock}` : "")),
       policy_hash: policyHash,
       extras: includeSnapshot ? { input_snapshot: input, attachments_snapshot: attachmentBlock, assistant_snapshot: captured } : undefined,

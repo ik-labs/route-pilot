@@ -144,7 +144,7 @@ program
             kids.forEach((k, idx) => printNode(k, nextPrefix, idx === kids.length - 1));
           };
           console.log(`Task ${opts.timeline}`);
-          const roots = (byParent[rootKey] || []).concat((byParent[null] || []));
+          const roots = byParent[rootKey] || [];
           roots.forEach((r: any, idx: number) => printNode(r, "", idx === roots.length - 1));
           return;
         } else {
@@ -246,7 +246,9 @@ Results:`);
           console.log(`primary: [\"${out.primary}\"]`);
           console.log(`backups: [${out.suggestedPatch.routing.backups.map((m: string) => `\"${m}\"`).join(", ")}]`);
         }
-      } catch (e) {
+      }
+      }
+      catch (e) {
       const code = printFriendlyError(e);
       process.exitCode = code;
     }

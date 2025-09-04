@@ -39,6 +39,7 @@ export async function replayPrompt(
       policy.gen ?? undefined,
       policy.routing.params ?? undefined,
       async (res, onFirst) => { await streamSSEToVoid(res, onFirst); },
+      undefined,
       false
     );
     const prompt = usagePrompt ?? 300;
