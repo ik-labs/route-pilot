@@ -410,4 +410,4 @@ Follow this quick checklist to exercise core features end-to-end.
 
 ## License
 
-Apache 2.0 License
+Licensed under the Apache License, Version 2.0. See `LICENSE` for details.
