@@ -410,4 +410,4 @@ Follow this quick checklist to exercise core features end-to-end.
 
 ## License
 
-Add your preferred license file if distributing. By default, this repo has no explicit license.
+Apache 2.0 License
