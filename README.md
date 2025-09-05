@@ -1,6 +1,10 @@
 # RoutePilot (CLI)
 
-A small, policy-driven CLI proxy/orchestrator for LLMs via Vercel AI Gateway. It reads a policy YAML, streams model output with supervised failover, enforces per-user quotas, and writes signed receipts to SQLite.
+Most agents die on outages, surprise bills, or inconsistent latency. RoutePilot adds a tiny “brain” in front of Vercel AI Gateway: you declare SLOs + budgets in YAML, and RoutePilot picks the best route, auto-falls back if a provider stalls, and proves every decision with a signed receipt.
+
+On top, we ship a thin agent (Helpdesk / Research) and optional sub-agents (Triage → Retrieve → Write) so you can watch policy-driven orchestration in action—all calls flow via AI Gateway.
+
+It's CLI proxy/orchestrator for LLMs via Vercel AI Gateway. It reads a policy YAML, streams model output with supervised failover, enforces per-user quotas, and writes signed receipts to SQLite.
 
 - OpenAI-compatible streaming via your Vercel AI Gateway project.
 - Failover on stall/5xx, with p95-aware route pre-pick.
