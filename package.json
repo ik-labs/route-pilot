@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",
+    "demo": "bash scripts/demo.sh",
     "test": "tsx scripts/pretest.ts && tsx scripts/tests.ts",
     "db:reset": "tsx scripts/db-reset.ts",
     "test:integration": "tsx scripts/tests-integration.ts"

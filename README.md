@@ -7,6 +7,16 @@ A small, policy-driven CLI proxy/orchestrator for LLMs via Vercel AI Gateway. It
 - Per-user daily token caps and sliding RPM.
 - Signed receipts + traces in SQLite (WAL), optional pretty JSON mirror.
 
+## Quickstart
+
+```bash
+pnpm install
+cp .env.example .env   # set AI_GATEWAY_BASE_URL and AI_GATEWAY_API_KEY
+pnpm dev -- infer -p balanced-helpdesk -u alice --input "Hello"
+# optional: link globally and use the CLI anywhere
+# pnpm link -g && routepilot receipts --limit 1
+```
+
 ## Requirements
 - Node 20+
 - pnpm (recommended)
@@ -75,7 +85,7 @@ Tip: copy `config/rates.example.yaml` to `config/rates.yaml` and edit to match y
   # or
   routepilot infer -p balanced-helpdesk -u alice --file prompt.txt
   # shadow an alternate model concurrently (no visible output)
-  routepilot infer -p balanced-helpdesk -u alice --input "Test" --shadow mistral/small
+  routepilot infer -p balanced-helpdesk -u alice --input "Test" --shadow anthropic/claude-3-haiku
   # with attachments (pdf, csv, txt, md)
   routepilot infer -p balanced-helpdesk -u alice --input "Summarize the attachment" \
     --attach report.pdf data.csv --pdf-pages 1-5 --csv-max-rows 50 --csv-cols "colA,colB" --max-chars 15000
@@ -111,16 +121,16 @@ Tip: copy `config/rates.example.yaml` to `config/rates.yaml` and edit to match y
 - Replay:
   ```bash
   # Ad-hoc text replay across models (with heuristic judge scoring)
-  routepilot replay -p balanced-helpdesk --text "Write a one-liner about teamwork" --alts "anthropic/claude-3-haiku,mistral/small" --judge
+  routepilot replay -p balanced-helpdesk --text "Write a one-liner about teamwork" --alts "anthropic/claude-3-haiku" --judge
 
   # Replay a specific receipt (requires snapshots)
   # First, record a receipt with an input snapshot
   ROUTEPILOT_SNAPSHOT_INPUT=1 routepilot infer -p balanced-helpdesk -u alice --input "Draft a note..."
   # Then replay
-  routepilot replay --open <receiptId> --alts "anthropic/claude-3-haiku,mistral/small"
+  routepilot replay --open <receiptId> --alts "anthropic/claude-3-haiku"
 
   # Replay the last N receipts with snapshots
-  routepilot replay --last 5 --alts "anthropic/claude-3-haiku,mistral/small"
+  routepilot replay --last 5 --alts "anthropic/claude-3-haiku"
   ```
 
 - Chaos toggles (for demos):
@@ -285,12 +295,12 @@ Validation:
     ```yaml
     routing:
       primary: ["openai/gpt-4o-mini"]
-      backups: ["anthropic/claude-3-haiku", "mistral/small"]
+      backups: ["anthropic/claude-3-haiku"]
       p95_window_n: 100
       params:
         "openai/gpt-4o-mini": { temperature: 0.2 }
         "anthropic/claude-3-haiku": { temperature: 0.1, top_p: 0.95 }
-        "mistral/small": { temperature: 0.3, stop: ["\n\nUser:"] }
+        # Add additional per-model params here if needed
     ```
 - `strategy.stream` — stream responses; `strategy.retry_on` — informational; `strategy.fallback_on_latency_ms` — stall cutoff; `strategy.max_attempts` — cap attempts; `strategy.backoff_ms` — per-attempt backoff; `strategy.first_chunk_gate_ms` — buffer initial stream to allow clean fallbacks.
 - `gen` — optional: `system`, `temperature`, `top_p`, `stop`, `json_mode` (maps to OpenAI `response_format: {type: "json_object"}` when true).
@@ -372,12 +382,12 @@ Follow this quick checklist to exercise core features end-to-end.
 
 - Shadow route (no visible output; extra receipt):
   ```bash
-  routepilot infer -p balanced-helpdesk -u alice --input "Shadow check" --shadow mistral/small
+  routepilot infer -p balanced-helpdesk -u alice --input "Shadow check" --shadow anthropic/claude-3-haiku
   ```
 
 - Replay with judge scoring:
   ```bash
-  routepilot replay -p balanced-helpdesk --text "One-liner about teamwork" --alts "anthropic/claude-3-haiku,mistral/small" --judge
+  routepilot replay -p balanced-helpdesk --text "One-liner about teamwork" --alts "anthropic/claude-3-haiku" --judge
   ```
 
 - Agents (plan, run, dry-run):

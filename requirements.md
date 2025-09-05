@@ -65,7 +65,7 @@ objectives:
   max_tokens: 1200
 routing:
   primary: ["openai/gpt-4o-mini"]
-  backups: ["anthropic/claude-3-haiku", "mistral/small"]
+  backups: ["anthropic/claude-3-haiku"]
 strategy:
   stream: true
   retry_on: ["5xx","rate_limit"]
@@ -82,9 +82,9 @@ quality:
 # CLI commands (UX)
 
 * `routepilot infer -p balanced-helpdesk -u alice --input "Summarize: <text>" --stream`
-* `routepilot infer -p balanced-helpdesk -u alice --file prompt.txt --shadow "mistral/small"`
+* `routepilot infer -p balanced-helpdesk -u alice --file prompt.txt --shadow "anthropic/claude-3-haiku"`
 * `routepilot usage -u alice` → prints tokens used / remaining today
-* `routepilot replay -p balanced-helpdesk --last 50 --alts "anthropic/claude-3-haiku,mistral/small"`
+* `routepilot replay -p balanced-helpdesk --last 50 --alts "anthropic/claude-3-haiku"`
 * `routepilot receipts --open <id>` → pretty-print one receipt
 
 ---

@@ -197,7 +197,7 @@ program
   .description("Run a prompt across alternate models and compare latency/cost")
   .option("-p, --policy <name>")
   .option("--text <input>")
-  .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku,mistral/small'")
+  .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku' or 'openai/gpt-4o-mini,anthropic/claude-3-haiku'")
   .option("--judge", "score outputs using a heuristic judge", false)
   .option("--json", "output JSON", false)
   .option("--open <id>", "replay a specific receipt id (requires snapshots)")
@@ -298,7 +298,7 @@ program
   .description("Replay retriever steps on alternate models and compare")
   .requiredOption("--name <chain>")
   .option("--text <input>")
-  .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku,mistral/small'")
+  .option("--alts <models>", "comma-separated alt routes, e.g. 'anthropic/claude-3-haiku' or 'openai/gpt-4o-mini,anthropic/claude-3-haiku'")
   .option("--json", "output JSON", false)
   .action(async (opts) => {
     try {

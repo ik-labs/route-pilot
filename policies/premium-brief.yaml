@@ -5,7 +5,7 @@ objectives:
   max_tokens: 1200
 routing:
   primary: ["openai/gpt-4o-mini"]
-  backups: ["anthropic/claude-3-haiku", "mistral/small"]
+  backups: ["anthropic/claude-3-haiku"]
   p95_window_n: 100
   params:
     "openai/gpt-4o-mini": { temperature: 0.2, top_p: 0.9 }
@@ -28,4 +28,3 @@ tenancy:
   timezone: "UTC"
 quality:
   judge: null
-

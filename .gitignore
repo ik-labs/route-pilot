@@ -6,6 +6,13 @@ dist/
 
 # Env
 .env
+.env.local
+.env.*.local
+
+# Local certs/keys (avoid accidental commits)
+*.pem
+*.crt
+*.key
 
 # OS / Editor
 .DS_Store
@@ -16,3 +23,4 @@ dist/
 data/routepilot.db
 data/receipts/
 
+submission.md

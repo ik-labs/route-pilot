@@ -4,8 +4,8 @@ objectives:
   max_cost_usd: 0.008
   max_tokens: 900
 routing:
-  primary: ["mistral/small"]
-  backups: ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"]
+  primary: ["openai/gpt-4o-mini"]
+  backups: ["anthropic/claude-3-haiku"]
   p95_window_n: 50
 strategy:
   stream: true
@@ -24,4 +24,3 @@ tenancy:
   timezone: "Asia/Kolkata"
 quality:
   judge: null
-

@@ -19,6 +19,12 @@ agents:
     output_schema: { type: object, properties: { draft: {type: string} }, required: [draft] }
     policy: premium-brief
     tools: []
+    system: |
+      You are WriterAgent. Produce a single JSON object with exactly this shape:
+      { "draft": string }
+      - The value of "draft" should be a concise, friendly reply to the user, using details from the provided context.
+      - Do not include any other top-level keys.
+      - Do not wrap in markdown fences.
 
   # Variants for parallel fan-out demo
   - name: RetrieverFast
